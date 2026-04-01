@@ -115,7 +115,7 @@ async function _refreshLiffUid() {
       localStorage.setItem(LS_UID, profile.userId);
       location.reload();
     }
-  } catch (_) { /* 背景失敗不影響頁面 */ }
+  } catch (e) { console.warn('[refreshUid] background refresh failed:', e?.message); }
 }
 
 async function loadDashboard(uid) {
@@ -255,7 +255,9 @@ function filterEmployees(type, btn) {
 
 function goToScore(encodedName, encodedSection) {
   if (viewAsUid) localStorage.setItem(LS_UID, viewAsUid);
-  location.href = `score.html?eid=${encodedName}&section=${encodedSection}`;
+  sessionStorage.setItem('score_eid', decodeURIComponent(encodedName));
+  sessionStorage.setItem('score_section', decodeURIComponent(encodedSection));
+  location.href = 'score.html';
 }
 
 function showError(msg) {

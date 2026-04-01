@@ -43,7 +43,7 @@ function updateSettings(newSettings) {
       sheet.appendRow([key, value]);
     }
   }
-  try { fsSyncSettings(); } catch (_) {}
+  try { fsSyncSettings(); } catch (e) { console.warn('[saveSettings] Firestore sync failed:', e?.message); }
   return { success: true };
 }
 

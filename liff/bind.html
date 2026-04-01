@@ -131,7 +131,7 @@ async function init() {
         goToDashboard(check.role);
         return;
       }
-    } catch (_) { /* 查詢失敗就繼續走 LIFF */ }
+    } catch (e) { console.warn('[bind] cached binding check failed, falling back to LIFF:', e?.message); }
   }
 
   // 沒快取或未綁定 → 走 LIFF 流程
@@ -195,7 +195,8 @@ async function doVerifyCode() {
     } else {
       showToast('❌ 驗證碼錯誤');
     }
-  } catch (_) {
+  } catch (e) {
+    console.warn('[verifyCode] error:', e?.message);
     showToast('驗證失敗，請重試');
   } finally {
     btn.disabled = false;
@@ -244,12 +245,7 @@ async function doBindByIdentity() {
 
 function goToDashboard(role) {
   if (lineUid) localStorage.setItem(LS_UID, lineUid);
-  const uid = encodeURIComponent(lineUid);
-  if (role === 'HR') {
-    location.href = `admin.html?uid=${uid}`;
-  } else {
-    location.href = `dashboard.html?uid=${uid}`;
-  }
+  location.href = role === 'HR' ? 'admin.html' : 'dashboard.html';
 }
 
 const s = document.createElement('script');

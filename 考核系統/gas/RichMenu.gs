@@ -322,7 +322,7 @@ function _createOrUpdateAlias(aliasId, richMenuId) {
       headers: { Authorization: `Bearer ${_getBotToken()}` },
       muteHttpExceptions: true,
     });
-  } catch (e) { /* 忽略 */ }
+  } catch (e) { console.warn('[setRichMenuAlias] delete old alias failed (expected if not exist):', e?.message); }
 
   _lineApiPost('/v2/bot/richmenu/alias', {
     richMenuAliasId: aliasId,

@@ -65,11 +65,11 @@ function syncEmployees() {
   empSheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#4a90d9').setFontColor('#ffffff');
   empSheet.hideColumns(6); // F欄(離職日)：系統內部使用，HR 不需要看到
 
-  // 同步到 Firestore
+  // 同步到 Firestore（失敗不影響主流程，但需留 log 供排查）
   try {
     fsSyncEmployees();
     fsSyncAllManagerDashboards();
-  } catch (_) {}
+  } catch (e) { console.warn('[importEmployees] Firestore sync failed:', e?.message); }
 
   return { success: true, count: employees.length };
 }

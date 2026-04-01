@@ -72,7 +72,14 @@
 
 <div class="btn-group">
   <button class="btn btn-draft" onclick="saveDraft()">儲存草稿</button>
-  <button class="btn btn-submit" id="submitBtn" onclick="submitScore()">確認送出</button>
+  <button class="btn btn-submit" id="submitBtn" onclick="showSubmitConfirm()">確認送出</button>
+</div>
+<div id="submit-confirm" style="display:none;margin:10px 0;padding:12px;background:#fff8e1;border-radius:8px;font-size:13px;text-align:center">
+  <div id="submit-confirm-msg" style="margin-bottom:8px;color:#7b6000"></div>
+  <div style="display:flex;gap:8px;justify-content:center">
+    <button onclick="submitScore()" style="padding:6px 18px;background:#4caf50;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">確定送出</button>
+    <button onclick="document.getElementById('submit-confirm').style.display='none'" style="padding:6px 18px;background:#eee;border:none;border-radius:6px;cursor:pointer;font-size:13px">取消</button>
+  </div>
 </div>
 
 <div style="text-align:center;font-size:11px;color:#aaa;padding-bottom:20px">
@@ -97,10 +104,9 @@ const GRADES = [
   { label: '丁', score: 35, desc: '0-59分' },
 ];
 
-const params = new URLSearchParams(location.search);
-let lineUid = decodeURIComponent(params.get('uid') || '') || localStorage.getItem(LS_UID) || '';
-const employeeName = decodeURIComponent(params.get('eid') || '');
-const section = decodeURIComponent(params.get('section') || '');
+let lineUid = localStorage.getItem(LS_UID) || '';
+const employeeName = sessionStorage.getItem('score_eid') || '';
+const section = sessionStorage.getItem('score_section') || '';
 
 let weight = 1;
 let currentScores = {};
@@ -214,11 +220,16 @@ function saveDraft() {
   });
 }
 
-function submitScore() {
+function showSubmitConfirm() {
   const filled = Object.keys(currentScores).filter(k => currentScores[k]);
   if (filled.length < SCORE_ITEMS.length) { showToast('⚠️ 請填寫所有評分項目'); return; }
-  if (!confirm(`確認送出 ${employeeName} 的評分？\n截止日前可返回修改。`)) return;
+  document.getElementById('submit-confirm-msg').textContent =
+    `確認送出 ${employeeName} 的評分？截止日前可返回修改。`;
+  document.getElementById('submit-confirm').style.display = 'block';
+}
 
+function submitScore() {
+  document.getElementById('submit-confirm').style.display = 'none';
   const btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.textContent = '送出中...';
