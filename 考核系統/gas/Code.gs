@@ -265,6 +265,8 @@ function doGet(e) {
 
   const page = e.parameter.page || 'dashboard';
   const lineUid = e.parameter.uid || '';
+  const isTest = e.parameter.isTest === 'true';
+  const liffId = isTest ? CONFIG.LIFF_ID_TEST : CONFIG.LIFF_ID;
 
   let template;
   switch (page) {
@@ -272,27 +274,27 @@ function doGet(e) {
       template = HtmlService.createTemplateFromFile('score');
       template.employeeId = e.parameter.eid || '';
       template.lineUid = lineUid;
-      template.liffId = CONFIG.LIFF_ID;
+      template.liffId = liffId;
       break;
     case 'admin':
       template = HtmlService.createTemplateFromFile('admin');
       template.lineUid = lineUid;
-      template.liffId = CONFIG.LIFF_ID;
+      template.liffId = liffId;
       break;
     case 'sysadmin':
       template = HtmlService.createTemplateFromFile('sysadmin');
       template.lineUid = lineUid;
-      template.liffId = CONFIG.LIFF_ID;
+      template.liffId = liffId;
       break;
     case 'bind':
       template = HtmlService.createTemplateFromFile('bind');
       template.lineUid = '';
-      template.liffId = CONFIG.LIFF_ID;
+      template.liffId = liffId;
       break;
     default:
       template = HtmlService.createTemplateFromFile('dashboard');
       template.lineUid = lineUid;
-      template.liffId = CONFIG.LIFF_ID;
+      template.liffId = liffId;
   }
 
   return template.evaluate()
