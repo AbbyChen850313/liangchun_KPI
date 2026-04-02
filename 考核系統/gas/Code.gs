@@ -161,6 +161,16 @@ function _log(level, fn, msg, detail) {
   }
 }
 
+/** 初始化測試環境：設定 TEST_SPREADSHEET_ID 並建立所有工作表 */
+function apiSetupTestEnv(secret) {
+  const stored = PropertiesService.getScriptProperties().getProperty('NOTIFY_SECRET');
+  if (!stored || secret !== stored) return { error: '認證失敗' };
+  bootstrapTestEnv();
+  initTestSpreadsheet();
+  return { success: true, testSpreadsheetId: '1TCOXZ0hp20h4Vr0JyLyedO64TPaSnw9GX30Fuh8Pdyg' };
+}
+
+
 /**
  * 一次性設定 NOTIFY_SECRET（若未設定過才有效，設定後回傳 secret）
  * 第一次呼叫：設定並回傳 secret；之後呼叫：回傳 { error: 'already set' }
@@ -316,6 +326,7 @@ function doPost(e) {
       apiNotifyOwner,
       apiSetBridgeUrl,
       apiUpdateRole,
+      apiSetupTestEnv,
     };
     if (!API[action]) {
       _log('WARN', 'doPost', `未知 action: ${action}`);

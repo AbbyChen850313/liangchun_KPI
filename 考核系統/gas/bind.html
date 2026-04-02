@@ -24,6 +24,22 @@
   <strong>錯誤：</strong><span id="errorMsg"></span>
 </div>
 
+<!-- 驗證碼畫面 -->
+<div id="codeView" style="display:none">
+  <div class="score-section" style="margin:12px 8px">
+    <div class="section-title">請輸入綁定驗證碼</div>
+    <div style="font-size:13px;color:#888;margin-bottom:12px">請向 HR 或管理員取得驗證碼</div>
+    <div class="setting-group">
+      <label class="setting-label">驗證碼</label>
+      <input type="text" class="setting-input" id="inputBindCode" placeholder="請輸入驗證碼"
+             autocomplete="off" style="letter-spacing:2px;font-size:18px;text-align:center">
+    </div>
+    <button class="btn btn-submit" style="width:100%;padding:14px;margin-top:4px" onclick="doVerifyCode()">
+      驗證
+    </button>
+  </div>
+</div>
+
 <!-- 輸入表單 -->
 <div id="formView" style="display:none">
   <div class="score-section" style="margin:12px 8px">
@@ -85,8 +101,13 @@ const isTest = <?!= isTest ? 'true' : 'false' ?>;
 let lineUid = '';
 let displayName = '';
 
-function showForm() {
+function showCodeInput() {
   document.getElementById('loadingView').style.display = 'none';
+  document.getElementById('codeView').style.display = 'block';
+}
+
+function showForm() {
+  document.getElementById('codeView').style.display = 'none';
   document.getElementById('formView').style.display = 'block';
 }
 
@@ -135,13 +156,33 @@ async function init() {
           `您好，${check.name}（${check.jobTitle}）`;
         document.getElementById('alreadyBoundView').style.display = 'block';
       } else {
-        document.getElementById('formView').style.display = 'block';
+        showCodeInput();
       }
     } catch (err) {
       showError(err.message);
     }
   };
   document.head.appendChild(s);
+}
+
+async function doVerifyCode() {
+  const code = document.getElementById('inputBindCode').value.trim();
+  if (!code) { showToast('請輸入驗證碼'); return; }
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '驗證中...';
+
+  const result = await callGAS('apiVerifyBindCode', [code]);
+
+  btn.disabled = false;
+  btn.textContent = '驗證';
+
+  if (!result.valid) {
+    showToast('❌ 驗證碼錯誤，請重新輸入');
+    return;
+  }
+  showForm();
 }
 
 async function doBindByIdentity() {

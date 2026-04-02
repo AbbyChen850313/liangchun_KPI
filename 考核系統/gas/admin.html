@@ -112,6 +112,12 @@
       <label class="setting-label">當前季度（如：115Q1）</label>
       <input type="text" class="setting-input" id="set_quarter" placeholder="115Q1">
     </div>
+    <div class="setting-group">
+      <label class="setting-label">綁定驗證碼</label>
+      <input type="text" class="setting-input" id="set_bindCode" placeholder="預設：HR0000"
+             autocomplete="off" style="letter-spacing:2px">
+      <div style="font-size:11px;color:#888;margin-top:2px">員工綁定帳號時需輸入此驗證碼</div>
+    </div>
     <div class="btn-group" style="padding:0;margin-top:12px">
       <button class="btn btn-primary" onclick="saveSettings()">儲存設定</button>
     </div>
@@ -305,6 +311,7 @@ async function loadSettings() {
   document.getElementById('set_notify1').value = toInputDate(settings['通知時間點1']);
   document.getElementById('set_notify2').value = toInputDate(settings['通知時間點2']);
   document.getElementById('set_quarter').value = settings['當前季度'] || '';
+  document.getElementById('set_bindCode').value = settings['綁定驗證碼'] || '';
   document.getElementById('exportQuarter').value = settings['當前季度'] || '';
 }
 
@@ -323,6 +330,7 @@ async function saveSettings() {
     '通知時間點1': document.getElementById('set_notify1').value,
     '通知時間點2': document.getElementById('set_notify2').value,
     '當前季度': document.getElementById('set_quarter').value,
+    '綁定驗證碼': document.getElementById('set_bindCode').value,
   };
   const result = await callGAS('apiUpdateSettings', [lineUid, newSettings]);
   showToast(result.error ? '❌ ' + result.error : '✅ 設定已儲存');
