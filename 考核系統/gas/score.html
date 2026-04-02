@@ -118,7 +118,7 @@ const params = new URLSearchParams(location.search);
 const lineUid = decodeURIComponent(params.get('uid') || '<?= lineUid ?>');
 const employeeName = decodeURIComponent(params.get('eid') || '');
 const section = decodeURIComponent(params.get('section') || '');
-const isTest = params.get('isTest') === 'true' || <?= isTest ?>;
+const isTest = params.get('isTest') === 'true' || <?!= isTest ? 'true' : 'false' ?>;
 
 let weight = 1;
 let currentScores = {};
@@ -188,7 +188,7 @@ function updatePreview() {
 }
 
 function loadExistingScores() {
-  callGAS('apiGetMyScores', [lineUid, null]).then(allScores => {
+  callGAS('apiGetMyScores', [lineUid, null, isTest]).then(allScores => {
     const existing = allScores[employeeName];
     if (!existing) return;
 
@@ -210,7 +210,7 @@ function loadExistingScores() {
   });
 
   // 取得員工年資等資訊
-  callGAS('apiGetScoreStatus', [lineUid]).then(status => {
+  callGAS('apiGetScoreStatus', [lineUid, isTest]).then(status => {
     const emp = (status.employees || []).find(e => e.name === employeeName);
     if (emp) {
       document.getElementById('empTenure').textContent = emp.tenure || '-';
