@@ -1,0 +1,25 @@
+{
+  "projects": [
+    {
+      "key": "survey",
+      "name": "泰旺問卷",
+      "repo": "https://github.com/AbbyChen850313/liangchun_survey.git",
+      "priority": 1,
+      "active": true
+    },
+    {
+      "key": "kpi",
+      "name": "考核系統",
+      "repo": "https://github.com/AbbyChen850313/liangchun_KPI.git",
+      "priority": 2,
+      "active": true
+    },
+    {
+      "key": "course",
+      "name": "課程系統",
+      "repo": "https://github.com/AbbyChen850313/liangchun_course.git",
+      "priority": 3,
+      "active": true
+    }
+  ]
+}
