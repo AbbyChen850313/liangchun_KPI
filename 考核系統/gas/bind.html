@@ -121,7 +121,7 @@ async function init() {
       let check;
       try {
         check = await Promise.race([
-          callGAS('apiCheckBinding', [lineUid]),
+          callGAS('apiCheckBinding', [lineUid, isTest]),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
         ]);
       } catch (e) {

@@ -137,25 +137,22 @@ function _updateWeightUid(jobTitle, lineUid, name) {
  */
 function apiBindByIdentity(lineUid, displayName, name, employeeId, phone, isTest) {
   try {
+    // 測試/正式環境路由：_ss() 自動指向對應 Spreadsheet
+    _setRequestIsTest(!!isTest);
+
     const employee = _findEmployeeByIdentity(name, employeeId);
     if (!employee) return { error: '查無此員工，請確認姓名與員工編號' };
 
     const role = _deriveRole(employee.titleCategory, employee.employeeId);
 
-    if (isTest) {
-      // 測試模式：只把 TEST_UID 寫入正式帳號的 J 欄，不新增行
-      _setRequestIsTest(false);
-      const linked = _linkTestUid(employee.name, employeeId, lineUid, role);
-      if (!linked) return { error: '查無正式帳號記錄，請先完成正式 LINE 綁定後再測試' };
-    } else {
-      _upsertAccount(lineUid, displayName, employee.name, employee.jobTitle, phone, role, employee.employeeId);
-      _updateWeightUid(employee.jobTitle, lineUid, employee.name);
-    }
+    // 帳號寫入對應環境的 LINE帳號 sheet（測試→測試 sheet，正式→正式 sheet）
+    _upsertAccount(lineUid, displayName, employee.name, employee.jobTitle, phone, role, employee.employeeId);
+    _updateWeightUid(employee.jobTitle, lineUid, employee.name);
 
     _log('INFO', 'apiBindByIdentity',
       `${isTest ? '[TEST] ' : ''}綁定成功：${employee.name}`,
       { jobTitle: employee.jobTitle });
-    if (!isTest) _emit('account.bound', { lineUid, name: employee.name, jobTitle: employee.jobTitle, role });
+    _emit('account.bound', { lineUid, name: employee.name, jobTitle: employee.jobTitle, role });
     return {
       success: true,
       name:      employee.name,
@@ -193,7 +190,8 @@ function _linkTestUid(name, employeeId, testUid, newRole) {
  * 確認 LINE UID 是否已完成綁定
  * @param {string} lineUid
  */
-function apiCheckBinding(lineUid) {
+function apiCheckBinding(lineUid, isTest) {
+  _setRequestIsTest(!!isTest);
   const account = _findAccountByUid(lineUid);
   if (!account) return { bound: false };
   return { bound: true, name: account.name, jobTitle: account.jobTitle, role: account.role };

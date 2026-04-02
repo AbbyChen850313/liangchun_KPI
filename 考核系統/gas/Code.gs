@@ -175,6 +175,44 @@ function apiBootstrapNotifySecret() {
 }
 
 /**
+ * 設定 Bridge server URL（供 Claude 觸發用）
+ * 用法：POST { action: 'apiSetBridgeUrl', args: ['SECRET', 'https://xxxx.trycloudflare.com'] }
+ */
+function apiSetBridgeUrl(secret, bridgeUrl) {
+  const stored = PropertiesService.getScriptProperties().getProperty('NOTIFY_SECRET');
+  if (!stored || secret !== stored) return { error: '認證失敗' };
+  PropertiesService.getScriptProperties().setProperty('BRIDGE_URL', bridgeUrl);
+  return { success: true, bridgeUrl };
+}
+
+/**
+ * 重設 NOTIFY_SECRET 並回傳新值（Bridge 首次設定用）
+ * 呼叫後舊 secret 立即失效
+ */
+function apiForceResetNotifySecret() {
+  const secret = Utilities.getUuid();
+  PropertiesService.getScriptProperties().setProperty('NOTIFY_SECRET', secret);
+  return { secret };
+}
+
+/**
+ * 直接推播 LINE 訊息給 OWNER_LINE_UID_TEST（bridge 通知用）
+ * 用法：POST { action: 'apiNotifyOwner', args: ['SECRET', '訊息'] }
+ */
+function apiNotifyOwner(secret, message) {
+  const props = PropertiesService.getScriptProperties();
+  const stored = props.getProperty('NOTIFY_SECRET');
+  if (!stored || secret !== stored) return { error: '認證失敗' };
+
+  const ownerUid = props.getProperty('OWNER_LINE_UID_TEST');
+  if (!ownerUid) return { error: 'OWNER_LINE_UID_TEST 未設定，請先傳送 ping 給 ABBY_Test bot' };
+
+  _setRequestIsTest(true);
+  const ok = sendReminder(ownerUid, message);
+  return { success: ok };
+}
+
+/**
  * 傳送 LINE 訊息給所有 HR / 系統管理員帳號（供 Claude Code 通知用）
  * 用法：POST { action: 'apiNotifyHR', args: ['SECRET', '訊息內容'] }
  * SECRET 需與 Script Property 'NOTIFY_SECRET' 相符
@@ -273,7 +311,10 @@ function doPost(e) {
       apiRefreshAllRoles,
       apiVerifyBindCode,
       apiBootstrapNotifySecret,
+      apiForceResetNotifySecret,
       apiNotifyHR,
+      apiNotifyOwner,
+      apiSetBridgeUrl,
       apiUpdateRole,
     };
     if (!API[action]) {
@@ -372,7 +413,8 @@ function _handleLiffBindAction(params) {
     let result;
 
     if (action === 'checkBinding') {
-      result = apiCheckBinding(uid);
+      const isTestCheck = params.isTest === 'true' || params.isTest === true;
+      result = apiCheckBinding(uid, isTestCheck);
 
     } else if (action === 'bindByIdentity') {
       const isTestBind = params.isTest === 'true' || params.isTest === true;
@@ -614,7 +656,14 @@ function _handleLineWebhook(events) {
           execMsg = `❌ 執行失敗：${err.message}`;
         }
       }
+      // 測試 Channel 的 ping：自動登記為 OWNER（Bridge 通知對象）
       const env = getActiveEnv();
+      if (env.isTest) {
+        const props = PropertiesService.getScriptProperties();
+        if (!props.getProperty('OWNER_LINE_UID_TEST')) {
+          props.setProperty('OWNER_LINE_UID_TEST', uid);
+        }
+      }
       const statusMsg = [
         '🤖 系統回應 OK',
         `環境：${env.isTest ? '✅ 測試Channel' : '⚠️ 正式Channel'}`,
@@ -739,9 +788,32 @@ function _handleLineWebhook(events) {
         _lineReply(replyToken, '⚠️ 即將重建所有 Rich Menu\n確認請傳 ping（5分鐘內有效）');
       }
 
+    // ── owner 登記：儲存傳送者的 UID 為 Bridge 通知對象 ───────
+    } else if (text === 'owner') {
+      const props = PropertiesService.getScriptProperties();
+      const bridgeUrl = props.getProperty('BRIDGE_URL');
+      if (!bridgeUrl) {
+        _lineReply(replyToken, '⚠️ Bridge 尚未設定，此指令目前無效');
+      } else {
+        props.setProperty('OWNER_LINE_UID_TEST', uid);
+        _lineReply(replyToken, '✅ 已登記！之後 Claude 修好 bug 會直接通知你');
+      }
+
     // ── bug 回報：轉發到 bridge server 觸發 Claude agent ──────
     } else if (/^bug:/i.test(text)) {
       _handleBugReport(text, uid, replyToken);
+
+    // ── 24h 循環：loop:kpi 目標說明 ────────────────────────────
+    } else if (/^loop:/i.test(text)) {
+      _handleLoopCommand(text, replyToken);
+
+    // ── 停止循環：stop:kpi ──────────────────────────────────────
+    } else if (/^stop:/i.test(text)) {
+      _handleStopCommand(text, replyToken);
+
+    // ── 查詢狀態：status ────────────────────────────────────────
+    } else if (text === 'status' || text === '狀態') {
+      _handleStatusCommand(replyToken);
 
     } else if (text === 'help' || text === '指令') {
       const userInfo = getManagerInfo(uid);
@@ -755,7 +827,14 @@ function _handleLineWebhook(events) {
         '更新選單 — 依角色同步圖文選單',
         '主管 / 同仁 / 重置 — 手動切換選單',
         '',
-        '🐛 Bug 回報（觸發 Claude 自動修復）：',
+        '🤖 Claude 自動開發（24h 循環）：',
+        'loop:kpi 目標   — 啟動考核系統循環',
+        'loop:course 目標 — 啟動課程系統循環',
+        'loop:survey 目標 — 啟動問卷系統循環',
+        'stop:kpi/course/survey — 停止循環',
+        'status — 查看各專案狀態',
+        '',
+        '🐛 Bug 回報（單次修復）：',
         'bug: kpi 描述   — 考核系統',
         'bug: course 描述 — 課程系統',
         'bug: survey 描述 — 泰旺問卷',
@@ -820,6 +899,102 @@ function _handleBugReport(text, uid, replyToken) {
 
 function _projectName(project) {
   return { kpi: '考核系統', course: '課程系統', survey: '泰旺問卷' }[project] || project;
+}
+
+/**
+ * 啟動 24h 循環：loop:kpi 目標說明
+ */
+function _handleLoopCommand(text, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL），請聯絡系統管理員');
+    return;
+  }
+  const match = text.match(/^loop:\s*(kpi|course|survey)\s+(.*)/is);
+  if (!match) {
+    _lineReply(replyToken, '格式：loop:kpi 目標說明\n例：loop:kpi 完成評分功能');
+    return;
+  }
+  const project = match[1].toLowerCase();
+  const goal = match[2].trim();
+  if (!goal) {
+    _lineReply(replyToken, '請說明目標，例：loop:kpi 完成評分功能');
+    return;
+  }
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ action: 'loop', project, goal }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `🚀 ${_projectName(project)} 24h 循環已啟動\n目標：${goal}\n\n進度會持續推播給你`
+      : `⚠️ ${result.message || '啟動失敗，請稍後再試'}`
+    );
+  } catch (err) {
+    _log('ERROR', '_handleLoopCommand', err.message);
+    _lineReply(replyToken, `❌ 啟動失敗：${err.message}`);
+  }
+}
+
+/**
+ * 停止循環：stop:kpi
+ */
+function _handleStopCommand(text, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定');
+    return;
+  }
+  const match = text.match(/^stop:\s*(kpi|course|survey)/i);
+  if (!match) {
+    _lineReply(replyToken, '格式：stop:kpi / stop:course / stop:survey');
+    return;
+  }
+  const project = match[1].toLowerCase();
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ action: 'stop', project }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `⏹ ${_projectName(project)} 循環已停止`
+      : `⚠️ ${result.message || '停止失敗'}`
+    );
+  } catch (err) {
+    _lineReply(replyToken, `❌ 停止失敗：${err.message}`);
+  }
+}
+
+/**
+ * 查詢狀態：status
+ */
+function _handleStatusCommand(replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定');
+    return;
+  }
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/health`, { muteHttpExceptions: true });
+    const result = JSON.parse(resp.getContentText());
+    const running = result.running || {};
+    if (Object.keys(running).length === 0) {
+      _lineReply(replyToken, '💤 目前所有專案閒置');
+    } else {
+      const lines = Object.entries(running).map(([proj, info]) =>
+        `▶ ${_projectName(proj)} [${info.mode === 'loop' ? '24h循環' : 'Bug修復'}]\n  自 ${info.started_at.slice(11,16)}\n  ${info.task.slice(0, 40)}`
+      );
+      _lineReply(replyToken, lines.join('\n\n'));
+    }
+  } catch (err) {
+    _lineReply(replyToken, `❌ 查詢失敗：${err.message}`);
+  }
 }
 
 /**
