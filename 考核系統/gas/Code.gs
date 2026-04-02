@@ -183,6 +183,8 @@ function apiNotifyHR(secret, message) {
   const stored = PropertiesService.getScriptProperties().getProperty('NOTIFY_SECRET');
   if (!stored || secret !== stored) return { error: '認證失敗' };
 
+  // 從正式 sheet 讀 HR/SysAdmin 帳號（帳號資料在正式環境），透過 TEST_UID 用測試 bot 發送
+  _setRequestIsTest(false);
   const rows = _sheetRows('LINE帳號');
   let sent = 0;
   for (let i = 1; i < rows.length; i++) {
@@ -191,22 +193,23 @@ function apiNotifyHR(secret, message) {
     if (status !== '已授權') continue;
     if (role !== 'HR' && role !== '系統管理員') continue;
 
-    // 優先用測試 UID（因為是測試 Bot 發送）
-    const testUid    = String(rows[i][COL_ACCOUNT.TEST_UID] || '').trim();
-    const primaryUid = String(rows[i][COL_ACCOUNT.UID]      || '').trim();
-    const uid = testUid || primaryUid;
-    if (!uid) continue;
+    // 只發給有 TEST_UID 的帳號（正式 UID 無法透過測試 bot 送出）
+    const testUid = String(rows[i][COL_ACCOUNT.TEST_UID] || '').trim();
+    if (!testUid) continue;
 
     try {
       _setRequestIsTest(true);
-      sendReminder(uid, message);
+      sendReminder(testUid, message);
       sent++;
     } catch (e) {
-      _log('WARN', 'apiNotifyHR', `發送失敗：${uid}`, e.message);
+      _log('WARN', 'apiNotifyHR', `發送失敗：${testUid}`, e.message);
+    } finally {
+      _setRequestIsTest(false);
     }
   }
   return { success: true, sent };
 }
+
 
 /**
  * GitHub Pages 前端透過 fetch() 呼叫 GAS API
