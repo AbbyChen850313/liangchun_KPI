@@ -291,6 +291,12 @@ class SheetsService:
             dest_ws.append_rows(eligible, value_input_option="USER_ENTERED")
         _invalidate(self.is_test, "員工資料")
 
+        # Automatically sync roles so Firestore reflects latest Sheets data
+        try:
+            self.refresh_roles_in_firestore()
+        except Exception:
+            logger.exception("Auto refresh_roles after sync_employees failed; skipping.")
+
         return len(eligible)
 
     # ── Manager weights (主管權重) ─────────────────────────────────────────
@@ -411,3 +417,83 @@ class SheetsService:
                 return
         ws.append_row(self._score_to_row(score_data), value_input_option="USER_ENTERED")
         _invalidate(self.is_test, "評分記錄")
+
+    def reset_scores_for_employees(self, quarter: str, emp_names: list[str]) -> int:
+        """Delete scoring rows for specified employees in a given quarter."""
+        ws = self.worksheet("評分記錄")
+        rows = _cached_rows(ws, self.is_test, "評分記錄")
+        c = _COL_SCORE
+        rows_to_delete = [
+            i
+            for i, row in enumerate(rows[1:], start=2)
+            if _safe(row, c["quarter"]) == quarter
+            and _safe(row, c["empName"]) in emp_names
+        ]
+        # Delete from bottom to top so row indices stay valid
+        for sheet_row in reversed(rows_to_delete):
+            ws.delete_rows(sheet_row)
+        _invalidate(self.is_test, "評分記錄")
+        return len(rows_to_delete)
+
+    # ── Role refresh (LINE帳號 → Firestore) ───────────────────────────────────
+
+    # Maps job-title keywords to roles. More specific entries must come first.
+    _ROLE_RULES: list[tuple[str, str]] = [
+        ("系統管理員", "系統管理員"),
+        ("人資", "HR"),
+        ("HR", "HR"),
+        ("廠長", "主管"),
+        ("組長", "主管"),
+        ("課長", "主管"),
+        ("主任", "主管"),
+        ("副理", "主管"),
+        ("經理", "主管"),
+        ("協理", "主管"),
+        ("副總", "主管"),
+        ("總經理", "主管"),
+    ]
+    _DEFAULT_ROLE = "員工"
+
+    def _derive_role_from_job_title(self, job_title: str) -> str:
+        """Return the role string inferred from a job title."""
+        for keyword, role in self._ROLE_RULES:
+            if keyword in job_title:
+                return role
+        return self._DEFAULT_ROLE
+
+    def refresh_roles_in_firestore(self) -> int:
+        """Read all accounts from LINE帳號 sheet and upsert role into Firestore."""
+        import config
+
+        try:
+            import firebase_admin
+            from firebase_admin import credentials as fb_creds, firestore as fb_store
+        except ImportError as exc:
+            raise RuntimeError("firebase-admin not installed") from exc
+
+        # Initialise Firebase app lazily (safe to call multiple times)
+        if not firebase_admin._apps:
+            sa_info = config.gcp_sa_info()
+            firebase_admin.initialize_app(fb_creds.Certificate(sa_info))
+
+        db = fb_store.client()
+        prefix = "test_" if self.is_test else ""
+        collection_name = f"{prefix}accounts"
+
+        accounts = self.get_all_accounts()
+        updated = 0
+        for account in accounts:
+            uid = account.get("lineUid") or account.get("testUid")
+            if not uid:
+                continue
+            role = account.get("role") or self._derive_role_from_job_title(
+                account.get("jobTitle", "")
+            )
+            db.collection(collection_name).document(uid).set(
+                {"role": role, "name": account.get("name", "")},
+                merge=True,
+            )
+            updated += 1
+
+        logger.info("refresh_roles_in_firestore: updated %d accounts (env=%s)", updated, collection_name)
+        return updated
