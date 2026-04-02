@@ -361,6 +361,34 @@ function apiGetAllAccounts(callerUid) {
 }
 
 /**
+ * 更新指定帳號的角色（HR / SysAdmin 專用）
+ * @param {string} hrUid      - 操作者 UID
+ * @param {string} targetUid  - 目標帳號 UID（正式或測試）
+ * @param {string} newRole    - 新角色值
+ */
+function apiUpdateRole(hrUid, targetUid, newRole) {
+  const info = getManagerInfo(hrUid);
+  if (!info || (!info.isHR && !info.isSysAdmin)) return { error: '無權限' };
+
+  const VALID_ROLES = ['系統管理員', 'HR', '主管', '同仁'];
+  if (!VALID_ROLES.includes(newRole)) return { error: '無效角色：' + newRole };
+
+  const accountSheet = _sheet('LINE帳號');
+  const rows = _sheetRows('LINE帳號');
+  for (let i = 1; i < rows.length; i++) {
+    const uid     = String(rows[i][COL_ACCOUNT.UID]      || '').trim();
+    const testUid = String(rows[i][COL_ACCOUNT.TEST_UID] || '').trim();
+    if (uid === targetUid || testUid === targetUid) {
+      accountSheet.getRange(i + 1, COL_ACCOUNT.ROLE + 1).setValue(newRole);
+      _log('INFO', 'apiUpdateRole', `角色更新：${rows[i][COL_ACCOUNT.NAME]} → ${newRole}`);
+      try { fsSyncAccounts(); } catch (e) {}
+      return { success: true };
+    }
+  }
+  return { error: '找不到帳號' };
+}
+
+/**
  * 取消指定帳號的綁定（HR 專用）
  * 1. 刪除 LINE帳號 記錄
  * 2. 清除 主管權重 中的姓名和 LINE_UID

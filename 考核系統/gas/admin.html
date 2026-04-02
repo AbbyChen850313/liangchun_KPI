@@ -62,13 +62,23 @@
 <!-- Tab: 帳號管理 -->
 <div class="tab-content" id="tab-accounts">
   <div style="padding:8px">
-    <div class="score-section">
-      <div class="section-title">已綁定帳號</div>
-      <div style="font-size:12px;color:#555;margin-bottom:10px">
-        員工輸入姓名與員工編號後自行完成綁定。<br>
-        已綁定清單可在 Google Sheets <strong>LINE帳號</strong> 工作表查看。<br>
-        如需刪除帳號，在工作表 G欄勾選後執行 <code>clearCheckedAccounts()</code>。
-      </div>
+    <div style="margin-bottom:8px;display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1;padding:10px" onclick="loadAccounts()">
+        🔄 重新整理
+      </button>
+    </div>
+    <div id="accountsTable">
+      <div class="loading"><div class="spinner"></div>載入中...</div>
+    </div>
+  </div>
+
+  <!-- 確認刪除 Card -->
+  <div id="confirmRemoveCard" style="display:none;position:fixed;bottom:0;left:0;right:0;background:white;border-top:2px solid #f44336;padding:16px;z-index:999;box-shadow:0 -4px 12px rgba(0,0,0,0.15)">
+    <div style="font-size:14px;font-weight:bold;margin-bottom:4px">確認撤銷綁定？</div>
+    <div style="font-size:13px;color:#666;margin-bottom:12px" id="confirmRemoveName"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1;background:#eee;color:#555;padding:10px" onclick="cancelRemove()">取消</button>
+      <button class="btn btn-danger" style="flex:1;padding:10px" onclick="doRemove()">確認撤銷</button>
     </div>
   </div>
 </div>
@@ -147,6 +157,7 @@ function switchTab(tab) {
   document.getElementById('tab-' + tab).classList.add('active');
 
   if (tab === 'progress') loadProgress();
+  if (tab === 'accounts') loadAccounts();
   if (tab === 'settings') loadSettings();
   if (tab === 'export') loadSettings();
 }
@@ -181,10 +192,107 @@ async function loadProgress() {
 
 function refreshProgress() { loadProgress(); }
 
-async function triggerReminder() {
-  if (!confirm('確認發送提醒通知給所有未完成的主管？')) return;
+let _reminderPending = false;
+function triggerReminder() {
+  if (_reminderPending) { doTriggerReminder(); return; }
+  _reminderPending = true;
+  const btn = event.currentTarget;
+  btn.textContent = '⚠️ 再按一次確認發送';
+  btn.style.background = '#e65100';
+  setTimeout(() => {
+    _reminderPending = false;
+    btn.textContent = '📢 發送提醒通知';
+    btn.style.background = '';
+  }, 3000);
+}
+async function doTriggerReminder() {
+  _reminderPending = false;
   const result = await callGAS('apiTriggerReminders', [lineUid]);
   showToast(result.error ? '❌ ' + result.error : `✅ 已通知 ${result.notifiedCount} 位主管`);
+}
+
+// === 帳號管理 ===
+let _removeTargetUid = '';
+
+async function loadAccounts() {
+  document.getElementById('accountsTable').innerHTML =
+    '<div class="loading"><div class="spinner"></div>載入中...</div>';
+  const accounts = await callGAS('apiGetAllAccounts', [lineUid]);
+  if (!accounts || accounts.error) {
+    document.getElementById('accountsTable').innerHTML =
+      `<div class="loading" style="color:#f44336">${(accounts && accounts.error) || '無法載入'}</div>`;
+    return;
+  }
+  if (accounts.length === 0) {
+    document.getElementById('accountsTable').innerHTML =
+      '<div class="loading">尚無已綁定帳號</div>';
+    return;
+  }
+
+  const ROLE_OPTIONS = ['系統管理員', 'HR', '主管', '同仁'];
+  const rows = accounts.map((a, idx) => {
+    const roleOpts = ROLE_OPTIONS.map(r =>
+      `<option value="${r}" ${a.role === r ? 'selected' : ''}>${r}</option>`
+    ).join('');
+    const statusColor = a.status === '已授權' ? '#2e7d32' : '#9e9e9e';
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:bold">${a.name}</div>
+          <div style="font-size:11px;color:#888">${a.jobTitle}</div>
+        </td>
+        <td>
+          <select class="setting-input" style="padding:4px;font-size:12px"
+            onchange="updateRole('${a.lineUid || a.testUid}', this.value, this)">
+            ${roleOpts}
+          </select>
+        </td>
+        <td style="color:${statusColor};font-size:12px">${a.status}</td>
+        <td style="font-size:11px;color:#888">${a.boundAt}</td>
+        <td>
+          <button class="btn btn-danger" style="padding:4px 8px;font-size:11px"
+            onclick="promptRemove('${a.lineUid || a.testUid}', '${a.name}')">
+            撤銷
+          </button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  document.getElementById('accountsTable').innerHTML = `
+    <table class="admin-table">
+      <thead><tr><th>姓名</th><th>角色</th><th>狀態</th><th>綁定日</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function updateRole(targetUid, newRole, selectEl) {
+  const result = await callGAS('apiUpdateRole', [lineUid, targetUid, newRole]);
+  if (result.error) {
+    showToast('❌ ' + result.error);
+    selectEl.value = selectEl.dataset.prev || '';
+  } else {
+    showToast('✅ 角色已更新');
+    selectEl.dataset.prev = newRole;
+  }
+}
+
+function promptRemove(uid, name) {
+  _removeTargetUid = uid;
+  document.getElementById('confirmRemoveName').textContent = `將撤銷「${name}」的綁定，此操作無法復原。`;
+  document.getElementById('confirmRemoveCard').style.display = 'block';
+}
+
+function cancelRemove() {
+  _removeTargetUid = '';
+  document.getElementById('confirmRemoveCard').style.display = 'none';
+}
+
+async function doRemove() {
+  document.getElementById('confirmRemoveCard').style.display = 'none';
+  const result = await callGAS('apiResetAccount', [lineUid, _removeTargetUid]);
+  showToast(result.error ? '❌ ' + result.error : '✅ 已撤銷綁定');
+  _removeTargetUid = '';
+  loadAccounts();
 }
 
 // === 系統設定 ===

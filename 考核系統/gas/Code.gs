@@ -162,6 +162,53 @@ function _log(level, fn, msg, detail) {
 }
 
 /**
+ * 一次性設定 NOTIFY_SECRET（若未設定過才有效，設定後回傳 secret）
+ * 第一次呼叫：設定並回傳 secret；之後呼叫：回傳 { error: 'already set' }
+ * 用法：POST { action: 'apiBootstrapNotifySecret', args: [] }
+ */
+function apiBootstrapNotifySecret() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('NOTIFY_SECRET')) return { error: 'already set' };
+  const secret = Utilities.getUuid();
+  props.setProperty('NOTIFY_SECRET', secret);
+  return { secret };
+}
+
+/**
+ * 傳送 LINE 訊息給所有 HR / 系統管理員帳號（供 Claude Code 通知用）
+ * 用法：POST { action: 'apiNotifyHR', args: ['SECRET', '訊息內容'] }
+ * SECRET 需與 Script Property 'NOTIFY_SECRET' 相符
+ */
+function apiNotifyHR(secret, message) {
+  const stored = PropertiesService.getScriptProperties().getProperty('NOTIFY_SECRET');
+  if (!stored || secret !== stored) return { error: '認證失敗' };
+
+  const rows = _sheetRows('LINE帳號');
+  let sent = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const role   = String(rows[i][COL_ACCOUNT.ROLE]     || '').trim();
+    const status = String(rows[i][COL_ACCOUNT.STATUS]   || '').trim();
+    if (status !== '已授權') continue;
+    if (role !== 'HR' && role !== '系統管理員') continue;
+
+    // 優先用測試 UID（因為是測試 Bot 發送）
+    const testUid    = String(rows[i][COL_ACCOUNT.TEST_UID] || '').trim();
+    const primaryUid = String(rows[i][COL_ACCOUNT.UID]      || '').trim();
+    const uid = testUid || primaryUid;
+    if (!uid) continue;
+
+    try {
+      _setRequestIsTest(true);
+      sendReminder(uid, message);
+      sent++;
+    } catch (e) {
+      _log('WARN', 'apiNotifyHR', `發送失敗：${uid}`, e.message);
+    }
+  }
+  return { success: true, sent };
+}
+
+/**
  * GitHub Pages 前端透過 fetch() 呼叫 GAS API
  * 接收 POST body: { action: 'apiFnName', args: [...] }
  */
@@ -222,6 +269,9 @@ function doPost(e) {
       apiGetDashboard,
       apiRefreshAllRoles,
       apiVerifyBindCode,
+      apiBootstrapNotifySecret,
+      apiNotifyHR,
+      apiUpdateRole,
     };
     if (!API[action]) {
       _log('WARN', 'doPost', `未知 action: ${action}`);
