@@ -171,7 +171,7 @@ function switchTab(tab) {
 
 // === 評分進度 ===
 async function loadProgress() {
-  const status = await callGAS('apiGetAllStatus', [lineUid]);
+  const status = await callGAS('apiGetAllStatus', [lineUid, isTest]);
   if (!status || status.error) {
     document.getElementById('progressTable').innerHTML =
       `<div class="loading" style="color:#f44336">${(status && status.error) || '無法載入'}</div>`;
@@ -214,7 +214,7 @@ function triggerReminder() {
 }
 async function doTriggerReminder() {
   _reminderPending = false;
-  const result = await callGAS('apiTriggerReminders', [lineUid]);
+  const result = await callGAS('apiTriggerReminders', [lineUid, isTest]);
   showToast(result.error ? '❌ ' + result.error : `✅ 已通知 ${result.notifiedCount} 位主管`);
 }
 
@@ -224,7 +224,7 @@ let _removeTargetUid = '';
 async function loadAccounts() {
   document.getElementById('accountsTable').innerHTML =
     '<div class="loading"><div class="spinner"></div>載入中...</div>';
-  const accounts = await callGAS('apiGetAllAccounts', [lineUid]);
+  const accounts = await callGAS('apiGetAllAccounts', [lineUid, isTest]);
   if (!accounts || accounts.error) {
     document.getElementById('accountsTable').innerHTML =
       `<div class="loading" style="color:#f44336">${(accounts && accounts.error) || '無法載入'}</div>`;
@@ -338,7 +338,7 @@ async function saveSettings() {
 
 async function syncEmployees() {
   showToast('⏳ 同步中...');
-  const result = await callGAS('apiSyncEmployees', [lineUid]);
+  const result = await callGAS('apiSyncEmployees', [lineUid, isTest]);
   showToast(result.error ? '❌ ' + result.error : `✅ 已同步 ${result.count} 位員工`);
 }
 
@@ -350,7 +350,7 @@ async function doExport() {
   document.getElementById('exportResult').innerHTML =
     '<div class="loading"><div class="spinner"></div>匯出中...</div>';
 
-  const result = await callGAS('apiExportExcel', [lineUid, quarter]);
+  const result = await callGAS('apiExportExcel', [lineUid, quarter, isTest]);
   if (result.error) {
     document.getElementById('exportResult').innerHTML =
       `<div style="color:#f44336">${result.error}</div>`;
