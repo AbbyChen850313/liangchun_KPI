@@ -147,6 +147,7 @@
 <script>
 const params = new URLSearchParams(location.search);
 const lineUid = decodeURIComponent(params.get('uid') || '<?= lineUid ?>');
+const isTest = params.get('isTest') === 'true' || <?!= isTest ? 'true' : 'false' ?>;
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((btn, i) => {

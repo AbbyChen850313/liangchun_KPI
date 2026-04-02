@@ -328,26 +328,31 @@ function doGet(e) {
       template.employeeId = e.parameter.eid || '';
       template.lineUid = lineUid;
       template.liffId = liffId;
+      template.isTest = isTest;
       break;
     case 'admin':
       template = HtmlService.createTemplateFromFile('admin');
       template.lineUid = lineUid;
       template.liffId = liffId;
+      template.isTest = isTest;
       break;
     case 'sysadmin':
       template = HtmlService.createTemplateFromFile('sysadmin');
       template.lineUid = lineUid;
       template.liffId = liffId;
+      template.isTest = isTest;
       break;
     case 'bind':
       template = HtmlService.createTemplateFromFile('bind');
       template.lineUid = '';
       template.liffId = liffId;
+      template.isTest = isTest;
       break;
     default:
       template = HtmlService.createTemplateFromFile('dashboard');
       template.lineUid = lineUid;
       template.liffId = liffId;
+      template.isTest = isTest;
   }
 
   return template.evaluate()
@@ -734,6 +739,10 @@ function _handleLineWebhook(events) {
         _lineReply(replyToken, '⚠️ 即將重建所有 Rich Menu\n確認請傳 ping（5分鐘內有效）');
       }
 
+    // ── bug 回報：轉發到 bridge server 觸發 Claude agent ──────
+    } else if (/^bug:/i.test(text)) {
+      _handleBugReport(text, uid, replyToken);
+
     } else if (text === 'help' || text === '指令') {
       const userInfo = getManagerInfo(uid);
       const isSysAdmin = userInfo && userInfo.isSysAdmin;
@@ -745,6 +754,11 @@ function _handleLineWebhook(events) {
         '取消綁定 — 解除帳號綁定',
         '更新選單 — 依角色同步圖文選單',
         '主管 / 同仁 / 重置 — 手動切換選單',
+        '',
+        '🐛 Bug 回報（觸發 Claude 自動修復）：',
+        'bug: kpi 描述   — 考核系統',
+        'bug: course 描述 — 課程系統',
+        'bug: survey 描述 — 泰旺問卷',
       ];
       if (isSysAdmin) {
         lines.push('');
@@ -757,6 +771,55 @@ function _handleLineWebhook(events) {
       _lineReply(replyToken, lines.join('\n'));
     }
   });
+}
+
+/**
+ * 處理 bug 回報，解析專案名稱並轉發到 bridge server
+ * 格式：bug: kpi 描述  /  bug: course 描述  /  bug: survey 描述
+ */
+function _handleBugReport(text, uid, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL），請聯絡系統管理員');
+    return;
+  }
+
+  // 解析格式：bug: [project] description
+  const match = text.match(/^bug:\s*(kpi|course|survey)?\s*(.*)/is);
+  const project = (match && match[1] ? match[1].toLowerCase() : null);
+  const description = (match && match[2] ? match[2].trim() : text.replace(/^bug:\s*/i, '').trim());
+
+  if (!project) {
+    _lineReply(replyToken,
+      '請指定專案：\nbug: kpi 描述\nbug: course 描述\nbug: survey 描述'
+    );
+    return;
+  }
+  if (!description) {
+    _lineReply(replyToken, '請描述問題，例如：\nbug: kpi 評分頁面無法送出');
+    return;
+  }
+
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/bug-report`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ project, description }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `✅ 已收到！Claude 開始處理 ${_projectName(project)}\n修好後會通知你`
+      : `⚠️ ${result.message || '轉發失敗，請稍後再試'}`
+    );
+  } catch (err) {
+    _log('ERROR', '_handleBugReport', err.message);
+    _lineReply(replyToken, `❌ 轉發失敗：${err.message}`);
+  }
+}
+
+function _projectName(project) {
+  return { kpi: '考核系統', course: '課程系統', survey: '泰旺問卷' }[project] || project;
 }
 
 /**

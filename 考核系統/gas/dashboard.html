@@ -62,6 +62,7 @@
 
 <script>
 const liffId = '<?= liffId ?>';
+const isTest = <?!= isTest ? 'true' : 'false' ?>;
 let lineUid = '<?= lineUid ?>';
 let employees = [];
 let myScores = {};
@@ -92,11 +93,11 @@ async function init() {
 
 async function loadDashboard(uid) {
   try {
-    const status = await callGAS('apiGetScoreStatus', [uid]);
+    const status = await callGAS('apiGetScoreStatus', [uid, isTest]);
 
     if (status.error) {
       if (status.error.includes('身份驗證')) {
-        location.href = '?page=bind';
+        location.href = '?page=bind' + (isTest ? '&isTest=true' : '');
         return;
       }
       showError(status.error);
@@ -105,13 +106,13 @@ async function loadDashboard(uid) {
 
     // HR → 轉到管理後台
     if (status.isHR) {
-      location.href = `?page=admin&uid=${encodeURIComponent(uid)}`;
+      location.href = `?page=admin&uid=${encodeURIComponent(uid)}` + (isTest ? '&isTest=true' : '');
       return;
     }
 
     // 並行載入評分記錄 & 系統設定
     const [myScoresResult, settings] = await Promise.all([
-      callGAS('apiGetMyScores', [uid, status.quarter]),
+      callGAS('apiGetMyScores', [uid, status.quarter, isTest]),
       callGAS('apiGetSettings', []),
     ]);
     myScores = myScoresResult || {};
@@ -201,7 +202,7 @@ function filterEmployees(type, btn) {
 
 function goToScore(encodedName, section) {
   const name = decodeURIComponent(encodedName);
-  location.href = `?page=score&uid=${encodeURIComponent(lineUid)}&eid=${encodeURIComponent(name)}&section=${encodeURIComponent(section)}`;
+  location.href = `?page=score&uid=${encodeURIComponent(lineUid)}&eid=${encodeURIComponent(name)}&section=${encodeURIComponent(section)}` + (isTest ? '&isTest=true' : '');
 }
 
 function callGAS(fn, args) {

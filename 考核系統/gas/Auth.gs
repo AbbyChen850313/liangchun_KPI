@@ -142,14 +142,20 @@ function apiBindByIdentity(lineUid, displayName, name, employeeId, phone, isTest
 
     const role = _deriveRole(employee.titleCategory, employee.employeeId);
 
-    // _REQUEST_IS_TEST 已由 doPost() 依 isTest 參數設定，_ss() 自動路由到正確 Spreadsheet
-    _upsertAccount(lineUid, displayName, employee.name, employee.jobTitle, phone, role, employee.employeeId);
-    _updateWeightUid(employee.jobTitle, lineUid, employee.name);
+    if (isTest) {
+      // 測試模式：只把 TEST_UID 寫入正式帳號的 J 欄，不新增行
+      _setRequestIsTest(false);
+      const linked = _linkTestUid(employee.name, employeeId, lineUid, role);
+      if (!linked) return { error: '查無正式帳號記錄，請先完成正式 LINE 綁定後再測試' };
+    } else {
+      _upsertAccount(lineUid, displayName, employee.name, employee.jobTitle, phone, role, employee.employeeId);
+      _updateWeightUid(employee.jobTitle, lineUid, employee.name);
+    }
 
     _log('INFO', 'apiBindByIdentity',
-      `${_isTestRequest() ? '[TEST] ' : ''}綁定成功：${employee.name}`,
+      `${isTest ? '[TEST] ' : ''}綁定成功：${employee.name}`,
       { jobTitle: employee.jobTitle });
-    _emit('account.bound', { lineUid, name: employee.name, jobTitle: employee.jobTitle, role });
+    if (!isTest) _emit('account.bound', { lineUid, name: employee.name, jobTitle: employee.jobTitle, role });
     return {
       success: true,
       name:      employee.name,

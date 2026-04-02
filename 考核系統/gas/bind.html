@@ -81,6 +81,7 @@
 
 <script>
 const liffId = '<?= liffId ?>';
+const isTest = <?!= isTest ? 'true' : 'false' ?>;
 let lineUid = '';
 let displayName = '';
 
@@ -157,7 +158,7 @@ async function doBindByIdentity() {
   btn.disabled = true;
   btn.textContent = '驗證中...';
 
-  const result = await callGAS('apiBindByIdentity', [lineUid, displayName, name, employeeId, phone]);
+  const result = await callGAS('apiBindByIdentity', [lineUid, displayName, name, employeeId, phone, isTest]);
 
   btn.disabled = false;
   btn.textContent = '確認綁定';
@@ -173,7 +174,7 @@ async function doBindByIdentity() {
 }
 
 function goToDashboard() {
-  location.href = '?page=dashboard';
+  location.href = '?page=dashboard' + (isTest ? '&isTest=true' : '');
 }
 
 function callGAS(fn, args) {

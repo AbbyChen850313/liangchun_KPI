@@ -15,3 +15,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+# Chrome user data accidentally placed in project
+考核系統/gas/UserskkAppDataLocalGoogleChromeUser Data/
+考核系統/gas/*.bak
+考核系統/gas/*.png

@@ -88,6 +88,15 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- 送出確認卡（替代 confirm popup） -->
+<div id="confirmSubmitCard" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #f44336;padding:16px;box-shadow:0 -4px 12px rgba(0,0,0,.15);z-index:999">
+  <div style="font-size:14px;margin-bottom:12px">確認送出 <strong id="confirmSubmitName"></strong> 的評分？截止日前可返回修改。</div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" style="flex:1;padding:12px;background:#eee;color:#333" onclick="document.getElementById('confirmSubmitCard').style.display='none'">取消</button>
+    <button class="btn btn-submit" style="flex:1;padding:12px" onclick="submitScore()">確認送出</button>
+  </div>
+</div>
+
 <script>
 const SCORE_ITEMS = [
   { key: 'item1', label: '【職能專業度】', desc: '根據公司任用職務項目，能充分自主完成工作' },
@@ -109,6 +118,7 @@ const params = new URLSearchParams(location.search);
 const lineUid = decodeURIComponent(params.get('uid') || '<?= lineUid ?>');
 const employeeName = decodeURIComponent(params.get('eid') || '');
 const section = decodeURIComponent(params.get('section') || '');
+const isTest = params.get('isTest') === 'true' || <?= isTest ?>;
 
 let weight = 1;
 let currentScores = {};
@@ -223,6 +233,7 @@ function getFormData() {
     scores: { ...currentScores },
     special: document.getElementById('specialAdj').value || '0',
     note: document.getElementById('noteText').value,
+    isTest,
   };
 }
 
@@ -249,8 +260,14 @@ function submitScore() {
     showToast('⚠️ 請填寫所有評分項目');
     return;
   }
-
-  if (!confirm(`確認送出 ${employeeName} 的評分？\n截止日前可返回修改。`)) return;
+  // 第一次點：顯示確認卡；第二次點（confirmSubmitCard 可見時）：直接送出
+  const card = document.getElementById('confirmSubmitCard');
+  if (card.style.display === 'none' || !card.style.display) {
+    document.getElementById('confirmSubmitName').textContent = employeeName;
+    card.style.display = 'block';
+    return;
+  }
+  card.style.display = 'none';
 
   const data = getFormData();
   const btn = document.getElementById('submitBtn');
