@@ -803,6 +803,18 @@ function _handleLineWebhook(events) {
     } else if (/^bug:/i.test(text)) {
       _handleBugReport(text, uid, replyToken);
 
+    // ── 新專案規劃：新專案 名稱 描述 ────────────────────────────
+    } else if (/^新專案\s+/i.test(text)) {
+      _handleNewProject(text, replyToken);
+
+    // ── 確認計畫：確認計畫 key ──────────────────────────────────
+    } else if (/^確認計畫\s+/i.test(text)) {
+      _handleConfirmPlan(text, replyToken);
+
+    // ── 修改計畫：修改計畫 key 說明 ─────────────────────────────
+    } else if (/^修改計畫\s+/i.test(text)) {
+      _handleRevisePlan(text, replyToken);
+
     // ── 24h 循環：loop:kpi 目標說明 ────────────────────────────
     } else if (/^loop:/i.test(text)) {
       _handleLoopCommand(text, replyToken);
@@ -838,6 +850,11 @@ function _handleLineWebhook(events) {
         'bug: kpi 描述   — 考核系統',
         'bug: course 描述 — 課程系統',
         'bug: survey 描述 — 泰旺問卷',
+        '',
+        '🆕 新專案規劃：',
+        '新專案 名稱 描述   — Planner 產出計畫草稿',
+        '確認計畫 key      — 確認草稿，加入排程',
+        '修改計畫 key 說明  — 修改草稿後重新呈現',
       ];
       if (isSysAdmin) {
         lines.push('');
@@ -899,6 +916,109 @@ function _handleBugReport(text, uid, replyToken) {
 
 function _projectName(project) {
   return { kpi: '考核系統', course: '課程系統', survey: '泰旺問卷' }[project] || project;
+}
+
+/**
+ * 新專案規劃：新專案 名稱 描述
+ * 格式：新專案 HR系統 管理員工出勤與薪資
+ */
+function _handleNewProject(text, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
+    return;
+  }
+  // 格式：新專案 <名稱> <描述>（名稱和描述之間至少一個空格）
+  const match = text.match(/^新專案\s+(\S+)\s+(.*)/i);
+  if (!match) {
+    _lineReply(replyToken, '格式：新專案 <名稱> <描述>\n例：新專案 HR系統 管理員工出勤與薪資');
+    return;
+  }
+  const name = match[1].trim();
+  const description = match[2].trim();
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ action: 'plan', name, description }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `🤔 正在規劃「${name}」...\n計畫草稿完成後會推播給你`
+      : `⚠️ ${result.error || '規劃失敗，請稍後再試'}`
+    );
+  } catch (err) {
+    _log('ERROR', '_handleNewProject', err.message);
+    _lineReply(replyToken, `❌ 轉發失敗：${err.message}`);
+  }
+}
+
+/**
+ * 確認計畫：確認計畫 <key>
+ */
+function _handleConfirmPlan(text, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
+    return;
+  }
+  const match = text.match(/^確認計畫\s+(\S+)/i);
+  if (!match) {
+    _lineReply(replyToken, '格式：確認計畫 <key>\n例：確認計畫 hr_system');
+    return;
+  }
+  const key = match[1].trim().toLowerCase();
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ action: 'confirm-plan', project: key }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `✅ 確認中，完成後會通知你`
+      : `⚠️ ${result.error || '確認失敗，請稍後再試'}`
+    );
+  } catch (err) {
+    _log('ERROR', '_handleConfirmPlan', err.message);
+    _lineReply(replyToken, `❌ 轉發失敗：${err.message}`);
+  }
+}
+
+/**
+ * 修改計畫：修改計畫 <key> <修改說明>
+ */
+function _handleRevisePlan(text, replyToken) {
+  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
+  if (!bridgeUrl) {
+    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
+    return;
+  }
+  const match = text.match(/^修改計畫\s+(\S+)\s+(.*)/i);
+  if (!match) {
+    _lineReply(replyToken, '格式：修改計畫 <key> <修改說明>\n例：修改計畫 hr_system 加入請假管理功能');
+    return;
+  }
+  const key = match[1].trim().toLowerCase();
+  const description = match[2].trim();
+  try {
+    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ action: 'revise-plan', project: key, description }),
+      muteHttpExceptions: true,
+    });
+    const result = JSON.parse(resp.getContentText());
+    _lineReply(replyToken, result.ok
+      ? `🔄 修改中，完成後會推播更新草稿`
+      : `⚠️ ${result.error || '修改失敗，請稍後再試'}`
+    );
+  } catch (err) {
+    _log('ERROR', '_handleRevisePlan', err.message);
+    _lineReply(replyToken, `❌ 轉發失敗：${err.message}`);
+  }
 }
 
 /**
