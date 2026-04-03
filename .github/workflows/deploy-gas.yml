@@ -1,0 +1,31 @@
+name: Deploy GAS (Apps Script)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "考核系統/gas/**"
+      - ".github/workflows/deploy-gas.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Write clasp credentials
+        run: echo '${{ secrets.CLASP_CREDENTIALS }}' > ~/.clasprc.json
+
+      - name: Push and deploy
+        working-directory: 考核系統/gas
+        run: |
+          clasp push --force
+          clasp deploy
