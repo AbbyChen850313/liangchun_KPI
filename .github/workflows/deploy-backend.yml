@@ -1,0 +1,26 @@
+name: Deploy KPI Backend to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "flask_backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: kaohe-backend
+          source: ./flask_backend
+          project_id: linchun-hr
+          region: asia-east1
+          flags: "--allow-unauthenticated"
