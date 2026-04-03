@@ -7,9 +7,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
-import type { Settings } from "../types";
+import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult } from "../types";
 
-type Tab = "progress" | "settings" | "employees";
+type Tab = "progress" | "settings" | "employees" | "batch";
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Admin() {
       </div>
 
       <div className="tab-bar">
-        {(["progress", "settings", "employees"] as Tab[]).map((t) => (
+        {(["progress", "settings", "employees", "batch"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`tab-btn${tab === t ? " active" : ""}`}
@@ -39,6 +39,7 @@ export default function Admin() {
       {tab === "progress" && <ProgressTab />}
       {tab === "settings" && <SettingsTab />}
       {tab === "employees" && <EmployeesTab />}
+      {tab === "batch" && <BatchScoringTab />}
     </div>
   );
 }
@@ -308,5 +309,185 @@ function EmployeesTab() {
 }
 
 function tabLabel(t: Tab): string {
-  return { progress: "評分進度", settings: "系統設定", employees: "員工名單" }[t];
+  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分" }[t];
+}
+
+// ── Batch Scoring tab ─────────────────────────────────────────────────────
+
+const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
+
+function BatchScoringTab() {
+  const { data: settings } = useApi<Settings>(
+    () => api.get("/api/admin/settings").then((r) => r.data)
+  );
+  const { data: statusData, loading } = useApi(
+    () => api.get("/api/scoring/all-status").then((r) => r.data)
+  );
+  const { data: employees } = useApi(
+    () => api.get("/api/admin/employees").then((r) => r.data)
+  );
+  const { data: responsibilities } = useApi(
+    () => api.get("/api/admin/responsibilities").then((r) => r.data)
+  );
+
+  const [quarter, setQuarter] = useState("");
+  const [entries, setEntries] = useState<Record<string, Partial<BatchScoreEntry>>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<BatchSubmitResult | null>(null);
+  const [toast, setToast] = useState("");
+
+  function rowKey(managerName: string, empName: string) {
+    return `${managerName}|${empName}`;
+  }
+
+  function setGrade(key: string, item: string, grade: ScoreGrade) {
+    setEntries((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        scores: { ...(prev[key]?.scores ?? emptyScores()), [item]: grade } as ScoreItems,
+      },
+    }));
+  }
+
+  const candidateRows: Array<{ managerName: string; managerLineUid: string; empName: string; section: string }> = [];
+  if (statusData && employees && responsibilities) {
+    const respMap: Record<string, any[]> = {};
+    (responsibilities as any[]).forEach((r: any) => {
+      respMap[r.lineUid] = [...(respMap[r.lineUid] ?? []), r];
+    });
+    (statusData as any[]).forEach((mgr: any) => {
+      const myResp = respMap[mgr.lineUid] ?? [];
+      const mySections = new Set(myResp.map((r: any) => r.section));
+      (employees as any[])
+        .filter((e: any) => mySections.has(e.section))
+        .forEach((e: any) => {
+          candidateRows.push({
+            managerName: mgr.managerName,
+            managerLineUid: mgr.lineUid,
+            empName: e.name,
+            section: e.section,
+          });
+        });
+    });
+  }
+
+  async function handleSubmit() {
+    const q = quarter || settings?.["當前季度"] || "";
+    if (!q) { setToast("❌ 請先選擇或確認當前季度"); return; }
+
+    const payload: BatchScoreEntry[] = candidateRows
+      .map((row) => {
+        const key = rowKey(row.managerName, row.empName);
+        const entry = entries[key];
+        return {
+          ...row,
+          scores: (entry?.scores ?? emptyScores()) as ScoreItems,
+          special: 0,
+          note: "",
+        };
+      })
+      .filter((e) => Object.values(e.scores).every((v) => v !== ""));
+
+    if (!payload.length) { setToast("❌ 尚無填寫完整的評分"); return; }
+
+    setSubmitting(true);
+    try {
+      const { data } = await api.post("/api/admin/batch-submit", { quarter: q, entries: payload });
+      setResult(data);
+      setToast(`✅ 送出完成：${data.submitted} 筆成功，${data.failed.length} 筆失敗`);
+    } catch (err: any) {
+      setToast(`❌ ${err.message}`);
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => setToast(""), 4000);
+    }
+  }
+
+  if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
+
+  return (
+    <div className="admin-section">
+      <div className="section-header">
+        <h3>批量評分代理</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            placeholder={settings?.["當前季度"] ?? "季度，如 115Q1"}
+            value={quarter}
+            onChange={(e) => setQuarter(e.target.value)}
+            style={{ width: 100, padding: "6px 8px", fontSize: 13 }}
+          />
+          <button className="btn-primary" onClick={handleSubmit} disabled={submitting}
+            style={{ width: "auto", padding: "8px 16px" }}>
+            {submitting ? "送出中…" : "批量送出"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#f5f5f5" }}>
+              <th style={thStyle}>主管</th>
+              <th style={thStyle}>員工</th>
+              <th style={thStyle}>科別</th>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <th key={i} style={thStyle}>項目{i}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {candidateRows.map((row) => {
+              const key = rowKey(row.managerName, row.empName);
+              const rowScores = entries[key]?.scores ?? emptyScores();
+              const allFilled = Object.values(rowScores).every((v) => v !== "");
+              return (
+                <tr key={key} style={{ borderBottom: "1px solid #eee", background: allFilled ? "#f0fff4" : "white" }}>
+                  <td style={tdStyle}>{row.managerName}</td>
+                  <td style={tdStyle}>{row.empName}</td>
+                  <td style={tdStyle}>{row.section}</td>
+                  {[1, 2, 3, 4, 5, 6].map((i) => {
+                    const itemKey = `item${i}` as keyof ScoreItems;
+                    return (
+                      <td key={i} style={tdStyle}>
+                        <select
+                          value={rowScores[itemKey]}
+                          onChange={(e) => setGrade(key, itemKey, e.target.value as ScoreGrade)}
+                          style={{ fontSize: 13, padding: "2px 4px" }}
+                        >
+                          <option value="">-</option>
+                          {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {result && result.failed.length > 0 && (
+        <div className="error-page" style={{ marginTop: 12 }}>
+          <strong>失敗明細：</strong>
+          <ul>
+            {result.failed.map((f, i) => (
+              <li key={i}>{f.empName}：{f.error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {toast && <div className="toast show">{toast}</div>}
+    </div>
+  );
+}
+
+const thStyle: React.CSSProperties = { padding: "8px 10px", textAlign: "left", fontWeight: 600 };
+const tdStyle: React.CSSProperties = { padding: "6px 10px" };
+
+function emptyScores(): ScoreItems {
+  return { item1: "", item2: "", item3: "", item4: "", item5: "", item6: "" };
 }

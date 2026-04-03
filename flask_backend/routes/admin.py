@@ -11,6 +11,7 @@ import logging
 from flask import Blueprint, g, jsonify, request, make_response
 
 from services.auth_service import require_hr, require_sysadmin
+from services.scoring_service import aggregate_annual_scores, annual_quarters, build_score_record
 from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,60 @@ def batch_reset_scores():
     return jsonify({"success": True, "resetCount": reset_count})
 
 
+# ── POST /api/admin/batch-submit ───────────────────────────────────────────
+
+@admin_bp.route("/batch-submit", methods=["POST"])
+@require_hr
+def batch_submit_scores():
+    """
+    HR proxy: submit scores for multiple employees/managers in one request.
+    AC2: per-entry validation — failed entries are returned, others proceed.
+    """
+    is_test: bool = g.session.get("isTest", False)
+    body = request.get_json(silent=True) or {}
+    quarter: str = (body.get("quarter") or "").strip()
+    entries: list[dict] = body.get("entries") or []
+
+    if not quarter or not entries:
+        return jsonify({"error": "必須提供 quarter 與 entries"}), 400
+
+    sheets = _sheets(is_test)
+    responsibilities = sheets.get_manager_responsibilities()
+
+    submitted, failed = 0, []
+    for entry in entries:
+        manager_name = (entry.get("managerName") or "").strip()
+        manager_uid = (entry.get("managerLineUid") or "").strip()
+        emp_name = (entry.get("empName") or "").strip()
+        section = (entry.get("section") or "").strip()
+        scores_raw: dict = entry.get("scores") or {}
+        special = float(entry.get("special") or 0)
+        note = (entry.get("note") or "").strip()
+
+        if not manager_name or not emp_name or not section:
+            failed.append({"empName": emp_name or "?", "error": "缺少必要欄位"})
+            continue
+
+        # AC2: validate all 6 items per entry; don't abort the whole batch
+        missing = [f"item{i}" for i in range(1, 7) if not scores_raw.get(f"item{i}")]
+        if missing:
+            failed.append({"empName": emp_name, "error": f"評分項目未填完：{', '.join(missing)}"})
+            continue
+
+        try:
+            record = build_score_record(
+                manager_name, manager_uid, emp_name, section,
+                scores_raw, special, note, quarter, responsibilities,
+            )
+            sheets.upsert_score(record)
+            submitted += 1
+        except Exception as exc:
+            logger.exception("batch_submit failed: %s/%s", manager_name, emp_name)
+            failed.append({"empName": emp_name, "error": str(exc)})
+
+    return jsonify({"success": True, "submitted": submitted, "failed": failed})
+
+
 # ── GET /api/admin/export-csv ──────────────────────────────────────────────
 
 @admin_bp.route("/export-csv", methods=["GET"])
@@ -146,3 +201,60 @@ def export_scores_csv():
         f'attachment; filename="scores_{quarter}.csv"'
     )
     return response
+
+
+# ── GET /api/admin/export-annual-csv ──────────────────────────────────────
+
+@admin_bp.route("/export-annual-csv", methods=["GET"])
+@require_hr
+def export_annual_scores_csv():
+    """
+    Export all-employee Q1~Q4 weighted scores as CSV for a given ROC year (AC3).
+
+    Query param: year (ROC year, e.g. 115).
+    Columns: 員工, 主管, 科別, Q1加權分 … Q4加權分, 全年加總, 已完成季度數.
+    """
+    is_test: bool = g.session.get("isTest", False)
+    year = request.args.get("year", "").strip()
+    if not year:
+        return jsonify({"error": "必須提供 year 參數（民國年，如 115）"}), 400
+
+    sheets = _sheets(is_test)
+    quarters = annual_quarters(int(year))
+    all_scores = sheets.get_all_scores_for_year(year)
+
+    emp_manager: dict[str, str] = {}
+    emp_section: dict[str, str] = {}
+    emp_map: dict[str, dict[str, float | None]] = {}
+    for s in all_scores:
+        emp = s["empName"]
+        if emp not in emp_map:
+            emp_map[emp] = {q: None for q in quarters}
+            emp_manager[emp] = s["managerName"]
+            emp_section[emp] = s["section"]
+        if s["status"] == "已送出":
+            emp_map[emp][s["quarter"]] = s.get("weightedScore")
+
+    summary = aggregate_annual_scores(emp_map)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        ["員工", "主管", "科別"]
+        + [f"{q}加權分" for q in quarters]
+        + ["全年加總", "已完成季度數"]
+    )
+    for emp, data in sorted(summary.items()):
+        row = [emp, emp_manager.get(emp, ""), emp_section.get(emp, "")]
+        for q in quarters:
+            v = data["quarters"].get(q)
+            row.append(v if v is not None else "未評分")
+        row += [data["annualTotal"], data["completedCount"]]
+        writer.writerow(row)
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    resp = make_response(csv_bytes)
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="annual_{year}.csv"'
+    )
+    return resp

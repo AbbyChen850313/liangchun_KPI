@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { liffAdapter } from "../adapters/liff";
 import { api } from "../services/api";
+import { refreshRole } from "../services/authRefresh";
 
 const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
 const SESSION_KEY = IS_TEST ? "session_token_test" : "session_token";
@@ -82,6 +83,8 @@ export function useLiff(): LiffState {
           headers: { Authorization: `Bearer ${existing}` },
         });
         setState({ ready: true, needBind: false, error: null, lineUid: null, name: data.name, role: data.role });
+        // AC1: silently refresh role in background; does not block UI
+        refreshRole().catch(() => {/* failure is harmless — interceptor retries on next API call */});
         return;
       }
 

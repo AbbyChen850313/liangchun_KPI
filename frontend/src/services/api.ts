@@ -4,10 +4,11 @@
  */
 
 import axios from "axios";
+import type { AnnualSummaryResponse } from "../types";
+import { refreshRole, SESSION_KEY } from "./authRefresh";
+import { liffAdapter } from "../adapters/liff";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
-const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
-const SESSION_KEY = IS_TEST ? "session_token_test" : "session_token";
 
 export const api = axios.create({
   baseURL: BASE_URL,
@@ -23,13 +24,33 @@ api.interceptors.request.use((req) => {
   return req;
 });
 
-// Normalise errors: preserve response data while surfacing message
+// Normalise errors; on 401 attempt a single role-refresh then retry
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
+  async (err) => {
+    const config = err.config as any;
+    if (err.response?.status === 401 && !config._retry) {
+      config._retry = true;
+      const newRole = await refreshRole();
+      if (newRole) {
+        const freshToken = localStorage.getItem(SESSION_KEY);
+        config.headers = { ...config.headers, Authorization: `Bearer ${freshToken}` };
+        return api(config);
+      }
+      // Refresh failed — clear session and force re-login
+      localStorage.removeItem(SESSION_KEY);
+      liffAdapter.logout();
+      window.location.reload();
+    }
     const data = err.response?.data ?? {};
     const normalised = new Error(data.error ?? err.message ?? "網路錯誤") as any;
     normalised.response = err.response;
     throw normalised;
   }
 );
+
+export async function apiGetAnnualSummary(year?: string): Promise<AnnualSummaryResponse> {
+  const params = year ? `?year=${encodeURIComponent(year)}` : "";
+  const res = await api.get<AnnualSummaryResponse>(`/api/scoring/annual-summary${params}`);
+  return res.data;
+}

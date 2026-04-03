@@ -179,6 +179,34 @@ def bind_account():
     })
 
 
+# ── POST /api/auth/refresh-role ────────────────────────────────────────────
+
+@auth_bp.route("/refresh-role", methods=["POST"])
+@require_auth
+def refresh_role():
+    """Re-issue JWT with latest role from Sheets/Firestore.
+    Called by frontend on Score page load and on 401 token-expiry recovery.
+    """
+    line_uid: str = g.session["lineUid"]
+    is_test: bool = g.session.get("isTest", False)
+
+    account, _ = _sheets(is_test).find_account_by_uid(line_uid)
+    if not account:
+        return jsonify({"error": "帳號未綁定"}), 401
+
+    token = issue_session_token(
+        line_uid=line_uid,
+        name=account["name"],
+        role=account.get("role", "同仁"),
+        is_test=is_test,
+    )
+    return jsonify({
+        "token": token,
+        "name": account["name"],
+        "role": account.get("role", "同仁"),
+    })
+
+
 # ── GET /api/auth/check ────────────────────────────────────────────────────
 
 @auth_bp.route("/check", methods=["GET"])

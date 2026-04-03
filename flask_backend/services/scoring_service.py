@@ -66,6 +66,71 @@ def calc_all(scores: dict, special: float, weight: float) -> dict:
     }
 
 
+def build_score_record(
+    manager_name: str,
+    line_uid: str,
+    emp_name: str,
+    section: str,
+    scores_raw: dict,
+    special: float,
+    note: str,
+    quarter: str,
+    responsibilities: list[dict],
+    status: str = "已送出",
+) -> dict:
+    """
+    Pure function — no I/O.
+    Assemble a complete score record dict ready for sheets.upsert_score().
+    Weight lookup is performed here so callers don't need to repeat it.
+    """
+    weight = next(
+        (r["weight"] for r in responsibilities
+         if r["lineUid"] == line_uid and r["section"] == section),
+        0.0,
+    )
+    calc = calc_all(scores_raw, special, weight)
+    return {
+        "quarter": quarter,
+        "managerName": manager_name,
+        "empName": emp_name,
+        "section": section,
+        "weight": weight,
+        "scores": scores_raw,
+        "special": special,
+        "note": note,
+        "status": status,
+        **calc,
+    }
+
+
+# ── Annual aggregation ─────────────────────────────────────────────────────
+
+def annual_quarters(roc_year: int) -> list[str]:
+    """Return the four quarter keys for a ROC year, e.g. 115 → ['115Q1','115Q2','115Q3','115Q4']."""
+    return [f"{roc_year:03d}Q{q}" for q in range(1, 5)]
+
+
+def aggregate_annual_scores(
+    scores_by_emp: dict[str, dict[str, float | None]]
+) -> dict[str, dict]:
+    """
+    Aggregate per-quarter weighted scores into an annual summary.
+
+    Input:  { empName: { "115Q1": 80.5, "115Q2": None, "115Q3": 90.0, "115Q4": None } }
+    Output: { empName: { quarters: {...}, annualTotal: float, completedCount: int } }
+    None indicates the quarter has not been scored yet.
+    """
+    result = {}
+    for emp_name, q_scores in scores_by_emp.items():
+        completed = {q: v for q, v in q_scores.items() if v is not None}
+        result[emp_name] = {
+            "quarters": q_scores,
+            "annualTotal": round(sum(completed.values()), 2),
+            "completedCount": len(completed),
+        }
+    return result
+
+
 # ── Tenure & eligibility ───────────────────────────────────────────────────
 
 def _parse_date(date_str: str) -> datetime | None:

@@ -56,6 +56,20 @@ export interface ScoreResult {
   weightedScore: number;
 }
 
+// ── Annual summary ────────────────────────────────────────────────────────
+
+export interface AnnualEmployeeSummary {
+  quarters: Record<string, number | null>;  // e.g. { "115Q1": 80.5, "115Q2": null }
+  annualTotal: number;
+  completedCount: number;
+}
+
+export interface AnnualSummaryResponse {
+  year: string;
+  quarters: string[];
+  summary: Record<string, AnnualEmployeeSummary>;  // keyed by empName
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────
 
 export interface DashboardData {
@@ -110,3 +124,21 @@ export interface ScoreItem {
 // ── Settings ──────────────────────────────────────────────────────────────
 
 export type Settings = Record<string, string>;
+
+// ── Batch submit (HR proxy) ───────────────────────────────────────────────
+
+export interface BatchScoreEntry {
+  managerName: string;
+  managerLineUid: string;
+  empName: string;
+  section: string;
+  scores: ScoreItems;
+  special: number;
+  note: string;
+}
+
+export interface BatchSubmitResult {
+  success: boolean;
+  submitted: number;
+  failed: Array<{ empName: string; error: string }>;
+}

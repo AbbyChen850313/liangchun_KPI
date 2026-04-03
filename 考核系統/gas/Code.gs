@@ -881,15 +881,32 @@ function _handleLineWebhook(events) {
 }
 
 /**
+ * 統一 bridge 請求，自動帶 token。
+ * method: 'post'|'get'，payload 為物件（自動 JSON 序列化）
+ */
+function _bridgeFetch(path, payload, method = 'post') {
+  const props = PropertiesService.getScriptProperties();
+  const bridgeUrl = props.getProperty('BRIDGE_URL');
+  const secret = props.getProperty('NOTIFY_SECRET');
+  if (!bridgeUrl) throw new Error('BRIDGE_URL 未設定');
+
+  const body = method === 'post'
+    ? JSON.stringify({ ...payload, token: secret })
+    : undefined;
+
+  return UrlFetchApp.fetch(`${bridgeUrl}${path}`, {
+    method,
+    contentType: method === 'post' ? 'application/json' : undefined,
+    payload: body,
+    muteHttpExceptions: true,
+  });
+}
+
+/**
  * 處理 bug 回報，解析專案名稱並轉發到 bridge server
  * 格式：bug: kpi 描述  /  bug: course 描述  /  bug: survey 描述
  */
 function _handleBugReport(text, uid, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL），請聯絡系統管理員');
-    return;
-  }
 
   // 解析格式：bug: [project] description
   const match = text.match(/^bug:\s*(kpi|course|survey)?\s*(.*)/is);
@@ -908,12 +925,7 @@ function _handleBugReport(text, uid, replyToken) {
   }
 
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/bug-report`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ project, description }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/bug-report', { project, description });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `✅ 已收到！Claude 開始處理 ${_projectName(project)}\n修好後會通知你`
@@ -934,11 +946,6 @@ function _projectName(project) {
  * 格式：新專案 HR系統 管理員工出勤與薪資
  */
 function _handleNewProject(text, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
-    return;
-  }
   // 格式：新專案 <名稱> <描述>（名稱和描述之間至少一個空格）
   const match = text.match(/^新專案\s+(\S+)\s+(.*)/i);
   if (!match) {
@@ -948,12 +955,7 @@ function _handleNewProject(text, replyToken) {
   const name = match[1].trim();
   const description = match[2].trim();
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ action: 'plan', name, description }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/command', { action: 'plan', name, description });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `🤔 正在規劃「${name}」...\n計畫草稿完成後會推播給你`
@@ -969,11 +971,6 @@ function _handleNewProject(text, replyToken) {
  * 確認計畫：確認計畫 <key>
  */
 function _handleConfirmPlan(text, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
-    return;
-  }
   const match = text.match(/^確認計畫\s+(\S+)/i);
   if (!match) {
     _lineReply(replyToken, '格式：確認計畫 <key>\n例：確認計畫 hr_system');
@@ -981,12 +978,7 @@ function _handleConfirmPlan(text, replyToken) {
   }
   const key = match[1].trim().toLowerCase();
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ action: 'confirm-plan', project: key }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/command', { action: 'confirm-plan', project: key });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `✅ 確認中，完成後會通知你`
@@ -1002,11 +994,6 @@ function _handleConfirmPlan(text, replyToken) {
  * 修改計畫：修改計畫 <key> <修改說明>
  */
 function _handleRevisePlan(text, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL）');
-    return;
-  }
   const match = text.match(/^修改計畫\s+(\S+)\s+(.*)/i);
   if (!match) {
     _lineReply(replyToken, '格式：修改計畫 <key> <修改說明>\n例：修改計畫 hr_system 加入請假管理功能');
@@ -1015,12 +1002,7 @@ function _handleRevisePlan(text, replyToken) {
   const key = match[1].trim().toLowerCase();
   const description = match[2].trim();
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ action: 'revise-plan', project: key, description }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/command', { action: 'revise-plan', project: key, description });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `🔄 修改中，完成後會推播更新草稿`
@@ -1036,11 +1018,6 @@ function _handleRevisePlan(text, replyToken) {
  * 啟動 24h 循環：loop:kpi 目標說明
  */
 function _handleLoopCommand(text, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定（BRIDGE_URL），請聯絡系統管理員');
-    return;
-  }
   const match = text.match(/^loop:\s*(kpi|course|survey)\s+(.*)/is);
   if (!match) {
     _lineReply(replyToken, '格式：loop:kpi 目標說明\n例：loop:kpi 完成評分功能');
@@ -1053,12 +1030,7 @@ function _handleLoopCommand(text, replyToken) {
     return;
   }
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ action: 'loop', project, goal }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/command', { action: 'loop', project, goal });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `🚀 ${_projectName(project)} 24h 循環已啟動\n目標：${goal}\n\n進度會持續推播給你`
@@ -1074,11 +1046,6 @@ function _handleLoopCommand(text, replyToken) {
  * 停止循環：stop:kpi
  */
 function _handleStopCommand(text, replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定');
-    return;
-  }
   const match = text.match(/^stop:\s*(kpi|course|survey)/i);
   if (!match) {
     _lineReply(replyToken, '格式：stop:kpi / stop:course / stop:survey');
@@ -1086,12 +1053,7 @@ function _handleStopCommand(text, replyToken) {
   }
   const project = match[1].toLowerCase();
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/command`, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ action: 'stop', project }),
-      muteHttpExceptions: true,
-    });
+    const resp = _bridgeFetch('/command', { action: 'stop', project });
     const result = JSON.parse(resp.getContentText());
     _lineReply(replyToken, result.ok
       ? `⏹ ${_projectName(project)} 循環已停止`
@@ -1106,13 +1068,8 @@ function _handleStopCommand(text, replyToken) {
  * 查詢狀態：status
  */
 function _handleStatusCommand(replyToken) {
-  const bridgeUrl = PropertiesService.getScriptProperties().getProperty('BRIDGE_URL');
-  if (!bridgeUrl) {
-    _lineReply(replyToken, '⚠️ Bridge 尚未設定');
-    return;
-  }
   try {
-    const resp = UrlFetchApp.fetch(`${bridgeUrl}/health`, { muteHttpExceptions: true });
+    const resp = _bridgeFetch('/health', {}, 'get');
     const result = JSON.parse(resp.getContentText());
     const running = result.running || {};
     if (Object.keys(running).length === 0) {

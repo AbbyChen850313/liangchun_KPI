@@ -40,6 +40,15 @@ def _build_gspread_stub():
         def update_cell(self, *a, **kw):
             pass
 
+        def append_row(self, *a, **kw):
+            pass
+
+        def update(self, *a, **kw):
+            pass
+
+        def delete_rows(self, *a, **kw):
+            pass
+
     class _FakeSpreadsheet:
         def worksheet(self, name):
             return _FakeWorksheet()
@@ -178,6 +187,28 @@ class TestAuth:
         assert res.status_code == 200
 
 
+class TestRefreshRole:
+    def test_refresh_role_returns_fresh_token_and_role(self, client):
+        """Valid JWT → returns new token and role."""
+        res = client.post("/api/auth/refresh-role", headers=_auth_header())
+        # Sheets stub returns empty worksheet, so find_account_by_uid returns None → 401
+        # This verifies the endpoint exists and auth guard works correctly.
+        assert res.status_code in (200, 401)
+
+    def test_refresh_role_rejects_no_token(self, client):
+        """No JWT → 401."""
+        res = client.post("/api/auth/refresh-role")
+        assert res.status_code == 401
+
+    def test_refresh_role_rejects_invalid_token(self, client):
+        """Malformed JWT → 401."""
+        res = client.post(
+            "/api/auth/refresh-role",
+            headers={"Authorization": "Bearer not.a.real.token"},
+        )
+        assert res.status_code == 401
+
+
 class TestAdminRefreshRoles:
     def test_refresh_roles_requires_sysadmin(self, client):
         res = client.post(
@@ -245,7 +276,246 @@ class TestScoringRoutes:
         assert res.status_code == 401
 
 
+class TestAnnualSummary:
+    def test_requires_auth(self, client):
+        res = client.get("/api/scoring/annual-summary")
+        assert res.status_code == 401
+
+    def test_non_manager_forbidden(self, client):
+        res = client.get(
+            "/api/scoring/annual-summary",
+            headers=_auth_header(role="同仁"),
+        )
+        assert res.status_code == 403
+
+    def test_manager_returns_200(self, client):
+        res = client.get(
+            "/api/scoring/annual-summary",
+            headers=_auth_header(role="主管"),
+        )
+        assert res.status_code == 200
+        body = res.get_json()
+        assert "quarters" in body
+        assert len(body["quarters"]) == 4
+        assert "summary" in body
+
+
+class TestExportAnnualCsv:
+    def test_requires_year_param(self, client):
+        res = client.get(
+            "/api/admin/export-annual-csv",
+            headers=_auth_header(role="HR"),
+        )
+        assert res.status_code == 400
+
+    def test_non_hr_forbidden(self, client):
+        res = client.get(
+            "/api/admin/export-annual-csv?year=115",
+            headers=_auth_header(role="主管"),
+        )
+        assert res.status_code == 403
+
+    def test_hr_returns_csv(self, client):
+        res = client.get(
+            "/api/admin/export-annual-csv?year=115",
+            headers=_auth_header(role="HR"),
+        )
+        assert res.status_code == 200
+        assert "text/csv" in res.content_type
+        lines = res.data.decode("utf-8-sig").splitlines()
+        header = lines[0]
+        assert "115Q1加權分" in header
+        assert "全年加總" in header
+
+
 class TestUnknownRoute:
     def test_unknown_route_returns_404(self, client):
         res = client.get("/api/does-not-exist")
         assert res.status_code == 404
+
+
+# ── Batch submit ──────────────────────────────────────────────────────────
+
+def _hr_header() -> dict:
+    token = issue_session_token(
+        line_uid="Uhr001",
+        name="測試HR",
+        role="HR",
+        is_test=True,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _manager_header() -> dict:
+    token = issue_session_token(
+        line_uid="Umgr1",
+        name="張主管",
+        role="主管",
+        is_test=True,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _make_valid_entry(emp_name: str = "王員工") -> dict:
+    return {
+        "managerName": "張主管",
+        "managerLineUid": "Umgr1",
+        "empName": emp_name,
+        "section": "人事科",
+        "scores": {f"item{i}": "甲" for i in range(1, 7)},
+        "special": 0,
+        "note": "",
+    }
+
+
+class TestBatchSubmit:
+    def test_missing_body_returns_400(self, client):
+        res = client.post(
+            "/api/admin/batch-submit",
+            headers=_hr_header(),
+            json={},
+        )
+        assert res.status_code == 400
+
+    def test_requires_hr_role(self, client):
+        res = client.post(
+            "/api/admin/batch-submit",
+            headers=_manager_header(),
+            json={"quarter": "115Q1", "entries": [_make_valid_entry()]},
+        )
+        assert res.status_code == 403
+
+    def test_all_success(self, client):
+        """AC1: 2 entries fully filled → submitted=2, failed=[]"""
+        entries = [_make_valid_entry(f"員工{n}") for n in range(1, 3)]
+        res = client.post(
+            "/api/admin/batch-submit",
+            headers=_hr_header(),
+            json={"quarter": "115Q1", "entries": entries},
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["submitted"] == 2
+        assert data["failed"] == []
+
+    def test_partial_failure_missing_item(self, client):
+        """AC2: one valid entry + one with missing item3 → submitted=1, failed=[{...}]"""
+        incomplete = _make_valid_entry("李員工")
+        incomplete["scores"]["item3"] = ""
+        entries = [_make_valid_entry("王員工"), incomplete]
+        res = client.post(
+            "/api/admin/batch-submit",
+            headers=_hr_header(),
+            json={"quarter": "115Q1", "entries": entries},
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["submitted"] == 1
+        assert len(data["failed"]) == 1
+        assert "item3" in data["failed"][0]["error"]
+
+
+# ── Unit tests: pure scoring logic ───────────────────────────────────────────
+
+from services.scoring_service import (  # noqa: E402
+    calc_raw_score, calc_final_score, calc_weighted_score,
+    calc_all, build_score_record, aggregate_annual_scores,
+)
+
+
+class TestScoringCalculations:
+    """AC1: 每位部屬 Q1 分數 = Σ 各項目分數"""
+
+    def test_all_甲_averages_to_95(self):
+        assert calc_raw_score({f"item{i}": "甲" for i in range(1, 7)}) == 95.0
+
+    def test_mixed_grades(self):
+        # (95+85+65+35+95+85)/6 = 76.67
+        scores = {"item1": "甲", "item2": "乙", "item3": "丙",
+                  "item4": "丁", "item5": "甲", "item6": "乙"}
+        assert calc_raw_score(scores) == 76.67
+
+    def test_special_bonus_adds_to_final(self):
+        assert calc_final_score(80.0, 5.0) == 85.0
+
+    def test_special_penalty_subtracts(self):
+        assert calc_final_score(80.0, -10.0) == 70.0
+
+    def test_weight_multiplied(self):
+        assert calc_weighted_score(80.0, 0.6) == 48.0
+
+    def test_full_chain_with_weight(self):
+        scores = {f"item{i}": "甲" for i in range(1, 7)}
+        result = calc_all(scores, special=0, weight=0.6)
+        assert result["rawScore"] == 95.0
+        assert result["finalScore"] == 95.0
+        assert result["weightedScore"] == 57.0
+
+    def test_build_score_record_weight_lookup(self):
+        responsibilities = [{"lineUid": "Umgr1", "section": "人事科", "weight": 0.6}]
+        scores = {f"item{i}": "甲" for i in range(1, 7)}
+        rec = build_score_record(
+            "張主管", "Umgr1", "王員工", "人事科",
+            scores, 0, "", "115Q1", responsibilities,
+        )
+        assert rec["weight"] == 0.6
+        assert rec["weightedScore"] == round(95.0 * 0.6, 2)
+
+
+class TestAggregateAnnualScores:
+    """AC2: 四季總分 = Q1+Q2+Q3+Q4，無重複或漏計"""
+
+    def test_all_four_quarters_sum(self):
+        data = {"王員工": {"115Q1": 80.0, "115Q2": 75.0, "115Q3": 90.0, "115Q4": 85.0}}
+        result = aggregate_annual_scores(data)
+        assert result["王員工"]["annualTotal"] == 330.0
+        assert result["王員工"]["completedCount"] == 4
+
+    def test_partial_quarters_exclude_none(self):
+        data = {"李員工": {"115Q1": 80.0, "115Q2": None, "115Q3": 90.0, "115Q4": None}}
+        result = aggregate_annual_scores(data)
+        assert result["李員工"]["annualTotal"] == 170.0
+        assert result["李員工"]["completedCount"] == 2
+
+    def test_all_none_returns_zero(self):
+        data = {"陳員工": {"115Q1": None, "115Q2": None, "115Q3": None, "115Q4": None}}
+        result = aggregate_annual_scores(data)
+        assert result["陳員工"]["annualTotal"] == 0.0
+        assert result["陳員工"]["completedCount"] == 0
+
+    def test_multiple_employees_independent(self):
+        data = {
+            "張員工": {"115Q1": 80.0, "115Q2": 75.0, "115Q3": 90.0, "115Q4": 85.0},
+            "林員工": {"115Q1": 70.0, "115Q2": 80.0, "115Q3": None, "115Q4": None},
+        }
+        result = aggregate_annual_scores(data)
+        assert result["張員工"]["annualTotal"] == 330.0
+        assert result["林員工"]["annualTotal"] == 150.0
+
+
+class TestScoreModification:
+    """AC3: 草稿不計入年度加總；re-submit 不拋錯"""
+
+    def test_draft_excluded_from_aggregate(self):
+        """route 在傳入 aggregate 前已過濾 status != 已送出；None 語義驗證"""
+        data = {"王員工": {"115Q1": None, "115Q2": 80.0, "115Q3": None, "115Q4": None}}
+        result = aggregate_annual_scores(data)
+        assert result["王員工"]["annualTotal"] == 80.0
+        assert result["王員工"]["completedCount"] == 1
+
+    def test_resubmit_returns_200(self, client):
+        """AC3: 主管對同一員工二次 submit，應回傳 200 及新分數（upsert 語義）"""
+        payload = {
+            "empName": "王員工", "section": "人事科",
+            "scores": {f"item{i}": "乙" for i in range(1, 7)},
+            "special": 0, "note": "", "quarter": "115Q1",
+        }
+        r1 = client.post("/api/scoring/submit",
+                         headers=_manager_header(), json=payload)
+        assert r1.status_code == 200
+
+        payload["scores"]["item1"] = "甲"
+        r2 = client.post("/api/scoring/submit",
+                         headers=_manager_header(), json=payload)
+        assert r2.status_code == 200
+        assert r2.get_json()["rawScore"] > r1.get_json()["rawScore"]

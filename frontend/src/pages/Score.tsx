@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
+import { refreshRole } from "../services/authRefresh";
 import type { ScoreGrade, ScoreItem, ScoreItems } from "../types";
 
 const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
@@ -22,6 +23,7 @@ export default function Score() {
   const [params] = useSearchParams();
   const empName = decodeURIComponent(params.get("name") ?? "");
   const section = decodeURIComponent(params.get("section") ?? "");
+  const quarter = decodeURIComponent(params.get("quarter") ?? "");
 
   const [scores, setScores] = useState<ScoreItems>({
     item1: "", item2: "", item3: "",
@@ -32,14 +34,20 @@ export default function Score() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
+  // AC1: refresh role on every Score page mount (covers SPA navigation where useLiff does not re-run)
+  useEffect(() => {
+    refreshRole();
+  }, []);
+
   // Load score items definitions
   const { data: scoreItems } = useApi<ScoreItem[]>(
     () => api.get("/api/scoring/items").then((r) => r.data)
   );
 
-  // Load existing scores for this employee
+  // Load existing scores for this employee (scoped to the correct quarter)
   const { data: myScores } = useApi<Record<string, any>>(
-    () => api.get("/api/scoring/my-scores").then((r) => r.data)
+    () => api.get(`/api/scoring/my-scores${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ""}`).then((r) => r.data),
+    [quarter]
   );
 
   // Pre-fill existing scores
@@ -85,6 +93,7 @@ export default function Score() {
         scores,
         special,
         note,
+        ...(quarter && { quarter }),
       });
       showToast(submit ? "✅ 評分已送出" : "💾 草稿已儲存");
       if (submit) setTimeout(() => navigate("/"), 1200);

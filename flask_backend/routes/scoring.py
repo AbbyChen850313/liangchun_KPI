@@ -10,6 +10,9 @@ from flask import Blueprint, g, jsonify, request
 
 from services.auth_service import require_auth, require_manager
 from services.scoring_service import (
+    aggregate_annual_scores,
+    annual_quarters,
+    build_score_record,
     calc_all,
     current_quarter,
     is_in_scoring_period,
@@ -74,34 +77,21 @@ def _upsert_score(status: str):
         if missing:
             return jsonify({"error": f"評分項目未填完：{', '.join(missing)}"}), 400
 
-    # Get manager weight for this section
+    # Get weight and build record (DIP: delegated to pure function)
     responsibilities = sheets.get_manager_responsibilities()
-    weight = next(
-        (r["weight"] for r in responsibilities if r["lineUid"] == line_uid and r["section"] == section),
-        0.0,
+    score_data = build_score_record(
+        manager_name, line_uid, emp_name, section,
+        scores_raw, special, note, quarter,
+        responsibilities, status=status,
     )
-
-    calc = calc_all(scores_raw, special, weight)
-
-    score_data = {
-        "quarter": quarter,
-        "managerName": manager_name,
-        "empName": emp_name,
-        "section": section,
-        "weight": weight,
-        "scores": scores_raw,
-        "special": special,
-        "note": note,
-        "status": status,
-        **calc,
-    }
-
     sheets.upsert_score(score_data)
 
     return jsonify({
         "success": True,
         "status": status,
-        **calc,
+        "rawScore": score_data["rawScore"],
+        "finalScore": score_data["finalScore"],
+        "weightedScore": score_data["weightedScore"],
     })
 
 
@@ -196,6 +186,50 @@ def get_all_status():
         })
 
     return jsonify(result)
+
+
+# ── GET /api/scoring/annual-summary ───────────────────────────────────────
+
+@scoring_bp.route("/annual-summary", methods=["GET"])
+@require_manager
+def get_annual_summary():
+    """
+    Return Q1~Q4 weighted score breakdown for all employees under the current manager.
+
+    Query param: year (ROC year, e.g. 115). Defaults to the year of the current quarter.
+    AC1: All four quarters scored → annualTotal = sum of Q1~Q4.
+    AC2: Missing quarter → quarters[q] = null (frontend shows 未評分).
+    """
+    session = g.session
+    manager_name: str = session["name"]
+    is_test: bool = session.get("isTest", False)
+    year = request.args.get("year", "").strip()
+
+    sheets = _sheets(is_test)
+    if not year:
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or current_quarter()
+        year = quarter[:3]
+
+    quarters = annual_quarters(int(year))
+
+    all_scores: list[dict] = []
+    for q in quarters:
+        all_scores.extend(sheets.get_scores_by_manager(q, manager_name))
+
+    emp_map: dict[str, dict[str, float | None]] = {}
+    for s in all_scores:
+        emp = s["empName"]
+        if emp not in emp_map:
+            emp_map[emp] = {q: None for q in quarters}
+        if s["status"] == "已送出":
+            emp_map[emp][s["quarter"]] = s.get("weightedScore")
+
+    return jsonify({
+        "year": year,
+        "quarters": quarters,
+        "summary": aggregate_annual_scores(emp_map),
+    })
 
 
 # ── GET /api/scoring/items ─────────────────────────────────────────────────

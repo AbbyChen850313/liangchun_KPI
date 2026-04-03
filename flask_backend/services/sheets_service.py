@@ -397,6 +397,20 @@ class SheetsService:
             if _safe(row, c["quarter"]) == quarter
         ]
 
+    def get_all_scores_for_year(self, roc_year: str) -> list[dict]:
+        """Return all scoring records whose quarter starts with the given ROC year prefix.
+
+        OCP: extends functionality without modifying the existing get_all_scores method.
+        """
+        ws = self.worksheet("評分記錄")
+        rows = _cached_rows(ws, self.is_test, "評分記錄")
+        c = _COL_SCORE
+        return [
+            self._parse_score_row(row)
+            for row in rows[1:]
+            if _safe(row, c["quarter"]).startswith(roc_year)
+        ]
+
     def upsert_score(self, score_data: dict) -> None:
         """Update existing row or append a new one."""
         ws = self.worksheet("評分記錄")

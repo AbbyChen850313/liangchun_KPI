@@ -6,8 +6,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
-import { api } from "../services/api";
+import { api, apiGetAnnualSummary } from "../services/api";
 import type {
+  AnnualSummaryResponse,
   AnyDashboard,
   DashboardData,
   Employee,
@@ -177,6 +178,8 @@ function InfoBar({ data }: { data: DashboardData }) {
   );
 }
 
+type ViewTab = "current" | "annual";
+
 function ManagerView({
   data,
   filter,
@@ -188,38 +191,100 @@ function ManagerView({
   setFilter: (f: Filter) => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {
+  const [tab, setTab] = useState<ViewTab>("current");
+  const { data: annualData } = useApi<AnnualSummaryResponse | null>(
+    () => (tab === "annual" ? apiGetAnnualSummary() : Promise.resolve(null)),
+    [tab]
+  );
+
   const filtered = filterEmployees(data.employees, filter);
 
   function goToScore(emp: Employee) {
     navigate(
-      `/score?name=${encodeURIComponent(emp.name)}&section=${encodeURIComponent(emp.section)}`
+      `/score?name=${encodeURIComponent(emp.name)}&section=${encodeURIComponent(emp.section)}&quarter=${encodeURIComponent(data.quarter)}`
     );
   }
 
   return (
     <>
       <div className="filter-bar">
-        {(["all", "pending", "draft", "done", "probation"] as Filter[]).map((f) => (
-          <button
-            key={f}
-            className={`filter-btn${filter === f ? " active" : ""}`}
-            onClick={() => setFilter(f)}
-          >
-            {filterLabel(f)}
-          </button>
-        ))}
+        <button
+          className={`filter-btn${tab === "current" ? " active" : ""}`}
+          onClick={() => setTab("current")}
+        >
+          本季評分
+        </button>
+        <button
+          className={`filter-btn${tab === "annual" ? " active" : ""}`}
+          onClick={() => setTab("annual")}
+        >
+          全年總覽
+        </button>
       </div>
 
-      <div className="employee-list">
-        {filtered.length === 0 ? (
-          <div className="hint-center">無符合條件的員工</div>
+      {tab === "annual" ? (
+        annualData ? (
+          <AnnualSummaryTable data={annualData} />
         ) : (
-          filtered.map((emp) => (
-            <EmployeeCard key={emp.name} emp={emp} onClick={() => goToScore(emp)} />
-          ))
-        )}
-      </div>
+          <div className="loading"><div className="spinner" />載入中...</div>
+        )
+      ) : (
+        <>
+          <div className="filter-bar">
+            {(["all", "pending", "draft", "done", "probation"] as Filter[]).map((f) => (
+              <button
+                key={f}
+                className={`filter-btn${filter === f ? " active" : ""}`}
+                onClick={() => setFilter(f)}
+              >
+                {filterLabel(f)}
+              </button>
+            ))}
+          </div>
+
+          <div className="employee-list">
+            {filtered.length === 0 ? (
+              <div className="hint-center">無符合條件的員工</div>
+            ) : (
+              filtered.map((emp) => (
+                <EmployeeCard key={emp.name} emp={emp} onClick={() => goToScore(emp)} />
+              ))
+            )}
+          </div>
+        </>
+      )}
     </>
+  );
+}
+
+function AnnualSummaryTable({ data }: { data: AnnualSummaryResponse }) {
+  return (
+    <div className="annual-table-wrap">
+      <table className="annual-table">
+        <thead>
+          <tr>
+            <th>員工</th>
+            {data.quarters.map((q) => <th key={q}>{q.slice(-2)}</th>)}
+            <th>全年加總</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(data.summary).map(([emp, row]) => (
+            <tr key={emp}>
+              <td>{emp}</td>
+              {data.quarters.map((q) => (
+                <td key={q}>
+                  {row.quarters[q] != null
+                    ? row.quarters[q]
+                    : <span className="badge-pending">未評分</span>}
+                </td>
+              ))}
+              <td><strong>{row.annualTotal}</strong></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
