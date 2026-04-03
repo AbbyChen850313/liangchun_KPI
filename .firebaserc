@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "linchun-hr"
+  },
+  "targets": {
+    "linchun-hr": {
+      "hosting": {
+        "test": ["linchun-hr-test"],
+        "prod": ["linchun-hr"]
+      }
+    }
   }
 }
