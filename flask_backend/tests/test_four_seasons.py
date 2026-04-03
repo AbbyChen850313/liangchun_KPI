@@ -120,6 +120,7 @@ def _build_stubs() -> None:
 
     gs.authorize = lambda creds: _FakeClient()
     gs.Client = _FakeClient
+    return gs  # caller can patch sheets_service.gspread directly
 
     # ── google.oauth2 ──────────────────────────────────────────────────────
     google = _stub_module("google")
@@ -224,6 +225,12 @@ def _all_甲_payload(quarter: str) -> dict:
 @pytest.fixture(scope="module")
 def client():
     """Single app instance shared across all tests in this module."""
+    import services.sheets_service as _svc
+    # Reset store and re-register our stub so test_endpoints.py gspread patch does not leak in.
+    _score_store._rows = [_score_store._HEADER[:]]
+    _svc.gspread = _build_stubs()
+    _svc._ws_cache.clear()
+    _svc._year_score_cache.clear()
     app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:

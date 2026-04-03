@@ -28,12 +28,23 @@ api.interceptors.request.use((req) => {
   return req;
 });
 
-// Normalise errors; on 401 attempt a single role-refresh then retry
+// Normalise errors; on 401 attempt a single role-refresh then retry.
+// Only trigger the reload recovery when the request carried a session JWT
+// (Authorization header). Session-creation endpoints (/api/auth/session,
+// /api/auth/line-oauth) pass the LINE access token in the body — they have
+// no Authorization header, so a 401 from them must propagate as an error
+// rather than triggering reload, which would restart the auth flow and loop.
+// Exception: needBind responses must propagate as-is so useLiff can handle
+// the bind flow.
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const config = err.config as any;
-    if (err.response?.status === 401 && !config._retry) {
+    const responseData = err.response?.data ?? {};
+
+    const isNeedBind = Boolean(responseData.needBind);
+    const hadSessionToken = Boolean(config.headers?.Authorization);
+    if (err.response?.status === 401 && !config._retry && !isNeedBind && hadSessionToken) {
       config._retry = true;
       const newRole = await refreshRole();
       if (newRole) {
@@ -46,8 +57,8 @@ api.interceptors.response.use(
       liffAdapter.logout();
       window.location.reload();
     }
-    const data = err.response?.data ?? {};
-    const normalised = new Error(data.error ?? err.message ?? "網路錯誤") as any;
+
+    const normalised = new Error(responseData.error ?? err.message ?? "網路錯誤") as any;
     normalised.response = err.response;
     throw normalised;
   }

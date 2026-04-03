@@ -26,6 +26,21 @@ def _stub_module(name: str) -> types.ModuleType:
     return mod
 
 
+# Module-level mutable scores store so stub persists within a test run
+_SCORES_HEADER = [
+    "quarter", "managerName", "empName", "section", "weight",
+    "item1", "item2", "item3", "item4", "item5", "item6",
+    "rawScore", "special", "finalScore", "weightedScore",
+    "note", "status", "updatedAt",
+]
+_fake_scores_rows: list[list] = [_SCORES_HEADER[:]]
+
+
+def _reset_fake_scores() -> None:
+    _fake_scores_rows.clear()
+    _fake_scores_rows.append(_SCORES_HEADER[:])
+
+
 def _build_gspread_stub():
     gs = _stub_module("gspread")
 
@@ -65,12 +80,37 @@ def _build_gspread_stub():
                 ["001", "王員工", "行政部", "人事科", "", ""],
             ]
 
+    class _FakeWorksheetScores(_FakeWorksheet):
+        """評分記錄 sheet: stateful stub so duplicate-submit guard works in tests."""
+        def get_all_values(self):
+            return [row[:] for row in _fake_scores_rows]
+
+        def append_row(self, row, **kw):
+            _fake_scores_rows.append(list(row))
+
+        def update(self, range_str, values, **kw):
+            import re
+            m = re.match(r"A(\d+)", range_str)
+            if m:
+                idx = int(m.group(1)) - 1
+                if 0 < idx < len(_fake_scores_rows):
+                    _fake_scores_rows[idx] = list(values[0])
+
+        def delete_rows(self, row_index, **kw):
+            idx = row_index - 1
+            if 0 < idx < len(_fake_scores_rows):
+                _fake_scores_rows.pop(idx)
+
+    _fake_scores_ws = _FakeWorksheetScores()
+
     class _FakeSpreadsheet:
         def worksheet(self, name):
             if name == "主管權重":
                 return _FakeWorksheetResponsibilities()
             if name == "員工資料":
                 return _FakeWorksheetEmployees()
+            if name == "評分記錄":
+                return _fake_scores_ws
             return _FakeWorksheet()
 
     class _FakeClient:
@@ -173,6 +213,11 @@ from services.auth_service import issue_session_token  # noqa: E402
 
 @pytest.fixture
 def client():
+    import services.sheets_service as _svc
+    _reset_fake_scores()
+    _svc.gspread = _build_gspread_stub()  # patch sheets_service directly; sys.modules swap alone does not update bound name
+    _svc._ws_cache.clear()
+    _svc._year_score_cache.clear()
     app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:
@@ -533,8 +578,8 @@ class TestScoreModification:
         assert result["王員工"]["annualTotal"] == 80.0
         assert result["王員工"]["completedCount"] == 1
 
-    def test_resubmit_returns_200(self, client):
-        """AC3: 主管對同一員工二次 submit，應回傳 200 及新分數（upsert 語義）"""
+    def test_resubmit_returns_409(self, client):
+        """AC3: 主管對同一員工二次 submit，應回傳 409（已完成評分不可重複提交）"""
         payload = {
             "empName": "王員工", "section": "人事科",
             "scores": {f"item{i}": "乙" for i in range(1, 7)},
@@ -544,8 +589,7 @@ class TestScoreModification:
                          headers=_manager_header(), json=payload)
         assert r1.status_code == 200
 
-        payload["scores"]["item1"] = "甲"
         r2 = client.post("/api/scoring/submit",
                          headers=_manager_header(), json=payload)
-        assert r2.status_code == 200
-        assert r2.get_json()["rawScore"] > r1.get_json()["rawScore"]
+        assert r2.status_code == 409
+        assert "已完成評分" in r2.get_json().get("error", "")
