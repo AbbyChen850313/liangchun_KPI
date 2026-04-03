@@ -838,6 +838,22 @@ function _handleLineWebhook(events) {
     } else if (text === 'status' || text === '狀態') {
       _handleStatusCommand(replyToken);
 
+    // ── gcloud 遠端授權：gcloud auth ────────────────────────────
+    } else if (text === 'gcloud auth') {
+      _handleGcloudAuth(replyToken);
+
+    // ── gcloud auth code 回傳：gcloud-code: XXXX ────────────────
+    } else if (/^gcloud-code:/i.test(text)) {
+      _handleGcloudCode(text, replyToken);
+
+    // ── 人工 QA 確認通過：qa-pass kpi ────────────────────────────
+    } else if (/^qa-pass\s+(kpi|course|survey)/i.test(text)) {
+      _handleQaPass(text, replyToken);
+
+    // ── 人工 QA 發現問題：qa-fail kpi 問題描述 ───────────────────
+    } else if (/^qa-fail\s+(kpi|course|survey)/i.test(text)) {
+      _handleQaFail(text, replyToken);
+
     } else if (text === 'help' || text === '指令') {
       const userInfo = getManagerInfo(uid);
       const isSysAdmin = userInfo && userInfo.isSysAdmin;
@@ -861,6 +877,10 @@ function _handleLineWebhook(events) {
         'bug: kpi 描述   — 考核系統',
         'bug: course 描述 — 課程系統',
         'bug: survey 描述 — 泰旺問卷',
+        '',
+        '🔍 人工 QA 確認（loop 推通知後回傳）：',
+        'qa-pass kpi     — 確認 QA 通過',
+        'qa-fail kpi 描述 — 回報問題，自動啟動修復',
         '',
         '🆕 新專案規劃：',
         '新專案 名稱 描述   — Planner 產出計畫草稿',
@@ -1082,6 +1102,60 @@ function _handleStatusCommand(replyToken) {
     }
   } catch (err) {
     _lineReply(replyToken, `❌ 查詢失敗：${err.message}`);
+  }
+}
+
+/**
+ * 啟動 gcloud 遠端授權：gcloud auth
+ */
+function _handleGcloudAuth(replyToken) {
+  try {
+    _lineReply(replyToken, '🔐 gcloud 授權啟動中，稍後推播連結...');
+    _bridgeFetch('/command', { action: 'gcloud-auth' });
+  } catch (err) {
+    _lineReply(replyToken, `❌ 授權啟動失敗：${err.message}`);
+  }
+}
+
+/**
+ * 回傳 gcloud auth code：gcloud-code: XXXX
+ */
+function _handleGcloudCode(text, replyToken) {
+  const match = text.match(/^gcloud-code:\s*(.+)/i);
+  if (!match) {
+    _lineReply(replyToken, '❌ 格式：gcloud-code: <授權碼>');
+    return;
+  }
+  try {
+    _lineReply(replyToken, '⏳ 驗證中...');
+    _bridgeFetch('/command', { action: 'gcloud-code', goal: match[1].trim() });
+  } catch (err) {
+    _lineReply(replyToken, `❌ 驗證失敗：${err.message}`);
+  }
+}
+
+function _handleQaPass(text, replyToken) {
+  const match = text.match(/^qa-pass\s+(kpi|course|survey)/i);
+  if (!match) { _lineReply(replyToken, '格式：qa-pass kpi'); return; }
+  const project = match[1].toLowerCase();
+  try {
+    _bridgeFetch('/command', { action: 'qa-pass', project });
+    _lineReply(replyToken, `✅ 已記錄 ${project.toUpperCase()} QA 通過`);
+  } catch (err) {
+    _lineReply(replyToken, `❌ 回報失敗：${err.message}`);
+  }
+}
+
+function _handleQaFail(text, replyToken) {
+  const match = text.match(/^qa-fail\s+(kpi|course|survey)\s*(.*)/is);
+  if (!match) { _lineReply(replyToken, '格式：qa-fail kpi 問題描述'); return; }
+  const project = match[1].toLowerCase();
+  const description = (match[2] || '').trim() || '（未填描述）';
+  try {
+    _bridgeFetch('/command', { action: 'qa-fail', project, description });
+    _lineReply(replyToken, `🔧 已回報 ${project.toUpperCase()} QA 失敗，正在啟動修復...`);
+  } catch (err) {
+    _lineReply(replyToken, `❌ 回報失敗：${err.message}`);
   }
 }
 
