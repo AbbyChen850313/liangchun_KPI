@@ -220,6 +220,12 @@ function ManagerView({
         >
           全年總覽
         </button>
+        <button
+          className="filter-btn"
+          onClick={() => navigate("/season-score")}
+        >
+          四季評分
+        </button>
       </div>
 
       {tab === "annual" ? (

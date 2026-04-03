@@ -121,6 +121,32 @@ export interface ScoreItem {
   description: string;
 }
 
+// ── Season scoring ─────────────────────────────────────────────────────────
+
+export type QuarterStatus = "未開始" | "評分中" | "已完成";
+
+export interface QuarterOption {
+  quarter: string;
+  description: string;
+  isAvailable: boolean;
+  status: QuarterStatus;
+  scoredCount: number;
+  totalCount: number;
+}
+
+export interface SeasonScoreStatus {
+  year: string;
+  quarters: QuarterOption[];
+}
+
+export interface QuarterEmployee {
+  name: string;
+  dept: string;
+  section: string;
+  joinDate: string;
+  scoreStatus: "未評分" | "草稿" | "已送出";
+}
+
 // ── Settings ──────────────────────────────────────────────────────────────
 
 export type Settings = Record<string, string>;

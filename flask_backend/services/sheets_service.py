@@ -75,12 +75,38 @@ def _safe(row: list, idx: int, default: Any = "") -> Any:
     return row[idx] if len(row) > idx else default
 
 
+def _with_retry(fn, max_attempts: int = 3, base_delay: float = 1.0):
+    """Execute fn(), retrying on Sheets quota (429) or service-unavailable (503) errors.
+
+    Uses exponential backoff: 1s → 2s → 4s.
+    All other exceptions propagate immediately.
+    """
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except gspread.exceptions.APIError as exc:
+            status_code = getattr(getattr(exc, "response", None), "status_code", 0)
+            if status_code in (429, 503) and attempt < max_attempts - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "Sheets API %d; retrying in %.1fs (attempt %d/%d)",
+                    status_code, delay, attempt + 1, max_attempts,
+                )
+                _time.sleep(delay)
+                continue
+            raise
+
+
 # ── Worksheet-level TTL cache ──────────────────────────────────────────────
 # Keyed by "{env}:{ws_name}". Shared across requests within the same process.
 # Write operations must call _invalidate() so stale data is never served.
 
-_CACHE_TTL: float = 30.0  # seconds
+_CACHE_TTL: float = 10.0  # seconds — kept short to reduce stale-read risk across instances
 _ws_cache: dict[str, tuple[list[list], float]] = {}
+
+# Per-manager-year aggregation cache (longer TTL acceptable; invalidated on writes)
+_YEAR_SCORE_CACHE_TTL: float = 60.0
+_year_score_cache: dict[str, tuple[list[dict], float]] = {}
 
 
 def _cache_key(is_test: bool, ws_name: str) -> str:
@@ -93,7 +119,7 @@ def _cached_rows(ws, is_test: bool, ws_name: str) -> list[list]:
     entry = _ws_cache.get(key)
     if entry and (_time.monotonic() - entry[1]) < _CACHE_TTL:
         return entry[0]
-    rows = ws.get_all_values()
+    rows = _with_retry(ws.get_all_values)
     _ws_cache[key] = (rows, _time.monotonic())
     return rows
 
@@ -101,6 +127,12 @@ def _cached_rows(ws, is_test: bool, ws_name: str) -> list[list]:
 def _invalidate(is_test: bool, ws_name: str) -> None:
     """Evict a worksheet from the cache after a write."""
     _ws_cache.pop(_cache_key(is_test, ws_name), None)
+
+
+def _invalidate_year_score(is_test: bool, manager_name: str, year: str) -> None:
+    """Evict the year-score aggregation cache for a specific manager+year."""
+    env = "test" if is_test else "prod"
+    _year_score_cache.pop(f"scores:{env}:{manager_name}:{year}", None)
 
 
 class SheetsService:
@@ -411,26 +443,53 @@ class SheetsService:
             if _safe(row, c["quarter"]).startswith(roc_year)
         ]
 
+    def get_scores_by_manager_year(self, manager_name: str, year: str) -> list[dict]:
+        """Return all scoring records for a manager across a full ROC year.
+
+        Uses a 60-second TTL aggregation cache (keyed by 'scores:{env}:{manager}:{year}')
+        on top of the worksheet-level cache to reduce repeated full-sheet reads when
+        the season-status endpoint polls multiple times per minute.
+        """
+        env = "test" if self.is_test else "prod"
+        cache_key = f"scores:{env}:{manager_name}:{year}"
+        entry = _year_score_cache.get(cache_key)
+        if entry and (_time.monotonic() - entry[1]) < _YEAR_SCORE_CACHE_TTL:
+            return entry[0]
+        manager_scores = [
+            s for s in self.get_all_scores_for_year(year)
+            if s["managerName"] == manager_name
+        ]
+        _year_score_cache[cache_key] = (manager_scores, _time.monotonic())
+        return manager_scores
+
     def upsert_score(self, score_data: dict) -> None:
         """Update existing row or append a new one."""
         ws = self.worksheet("評分記錄")
         rows = _cached_rows(ws, self.is_test, "評分記錄")
         c = _COL_SCORE
+        score_row = self._score_to_row(score_data)
         for i, row in enumerate(rows[1:], start=2):
             if (
                 _safe(row, c["quarter"]) == score_data["quarter"]
                 and _safe(row, c["managerName"]) == score_data["managerName"]
                 and _safe(row, c["empName"]) == score_data["empName"]
             ):
-                ws.update(
+                existing_status = _safe(row, c["status"])
+                if existing_status == "已送出" and score_data.get("status") == "草稿":
+                    return  # 已送出記錄不允許被草稿覆寫
+                _with_retry(lambda: ws.update(
                     f"A{i}:R{i}",
-                    [self._score_to_row(score_data)],
+                    [score_row],
                     value_input_option="USER_ENTERED",
-                )
+                ))
                 _invalidate(self.is_test, "評分記錄")
                 return
-        ws.append_row(self._score_to_row(score_data), value_input_option="USER_ENTERED")
+        _with_retry(lambda: ws.append_row(score_row, value_input_option="USER_ENTERED"))
         _invalidate(self.is_test, "評分記錄")
+        year = score_data.get("quarter", "")[:3]
+        manager = score_data.get("managerName", "")
+        if year and manager:
+            _invalidate_year_score(self.is_test, manager, year)
 
     def reset_scores_for_employees(self, quarter: str, emp_names: list[str]) -> int:
         """Delete scoring rows for specified employees in a given quarter."""
@@ -447,6 +506,11 @@ class SheetsService:
         for sheet_row in reversed(rows_to_delete):
             ws.delete_rows(sheet_row)
         _invalidate(self.is_test, "評分記錄")
+        # Bulk reset may affect multiple managers — clear the entire year-score cache
+        year = quarter[:3]
+        stale_keys = [k for k in list(_year_score_cache) if f":{year}" in k]
+        for k in stale_keys:
+            _year_score_cache.pop(k, None)
         return len(rows_to_delete)
 
     # ── Role refresh (LINE帳號 → Firestore) ───────────────────────────────────

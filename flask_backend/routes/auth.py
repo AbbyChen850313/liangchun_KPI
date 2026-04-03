@@ -9,6 +9,7 @@ import logging
 from flask import Blueprint, g, jsonify, request
 
 import config
+from extensions import limiter
 from services.auth_service import (
     decode_bind_token,
     issue_bind_token,
@@ -164,12 +165,22 @@ def bind_account():
     # Write UID into the sheet
     sheets.bind_account(sheet_row, line_uid, display_name)
 
-    # Notify binding success via LINE message
-    push_message(
-        line_uid,
-        f"✅ 帳號綁定成功！\n您好，{name}，歡迎使用考核評分系統。",
-        is_test=is_test,
+    logger.info(
+        "AUDIT | route=bind_account | actor=%s(%s) | action=bind | target=%s",
+        name, line_uid, employee_id,
     )
+
+    # Notify binding success via LINE message; failure must not undo a successful bind
+    try:
+        push_message(
+            line_uid,
+            f"✅ 帳號綁定成功！\n您好，{name}，歡迎使用考核評分系統。",
+            is_test=is_test,
+        )
+    except Exception:
+        logger.warning(
+            "bind_account: LINE push_message failed for uid=%s; binding succeeded", line_uid
+        )
 
     return jsonify({
         "success": True,
@@ -255,12 +266,17 @@ def reset_account():
         return jsonify({"error": "找不到該帳號"}), 404
 
     sheets.unbind_account(sheet_row)
+    logger.info(
+        "AUDIT | route=reset_account | actor=%s(%s) | action=unbind | target=%s",
+        g.session["name"], g.session["lineUid"], target_uid,
+    )
     return jsonify({"success": True})
 
 
 # ── POST /api/auth/verify-code ─────────────────────────────────────────────
 
 @auth_bp.route("/verify-code", methods=["POST"])
+@limiter.limit("5/minute")
 def verify_bind_code():
     """
     Validate the bind verification code entered by the user on bind.html.

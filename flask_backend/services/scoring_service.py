@@ -207,3 +207,32 @@ def is_in_scoring_period(settings: dict) -> bool:
         return True
     now = datetime.now()
     return start <= now <= end
+
+
+def get_available_quarters(roc_year: int) -> list[str]:
+    """Return quarters in roc_year that are at or before the current quarter.
+
+    Example: year=115, current quarter=115Q2 → ['115Q1', '115Q2']
+    Years prior to the current ROC year return all four quarters.
+    """
+    cq = current_quarter()
+    cq_year = int(cq[:3])
+    cq_num = int(cq[4])
+    return [
+        f"{roc_year:03d}Q{q}"
+        for q in range(1, 5)
+        if roc_year < cq_year or (roc_year == cq_year and q <= cq_num)
+    ]
+
+
+def is_quarter_fully_submitted(scores: list[dict], employees: list[dict]) -> bool:
+    """Return True if every employee in the list has a submitted score.
+
+    Args:
+        scores:    List of score records for a single quarter (any status).
+        employees: List of employee dicts, each with a 'name' key.
+    """
+    if not employees:
+        return False
+    submitted_names = {s["empName"] for s in scores if s.get("status") == "已送出"}
+    return all(e["name"] in submitted_names for e in employees)

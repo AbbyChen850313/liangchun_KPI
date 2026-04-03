@@ -49,13 +49,43 @@ def _build_gspread_stub():
         def delete_rows(self, *a, **kw):
             pass
 
+    class _FakeWorksheetResponsibilities(_FakeWorksheet):
+        """主管權重 sheet: manager Umgr1 → 人事科"""
+        def get_all_values(self):
+            return [
+                ["section", "jobTitle", "name", "lineUid", "testUid", "weight"],
+                ["人事科", "主任", "張主管", "Lprod1", "Umgr1", "0.6"],
+            ]
+
+    class _FakeWorksheetEmployees(_FakeWorksheet):
+        """員工資料 sheet: 王員工 in 人事科"""
+        def get_all_values(self):
+            return [
+                ["employeeId", "name", "dept", "section", "joinDate", "leaveDate"],
+                ["001", "王員工", "行政部", "人事科", "", ""],
+            ]
+
     class _FakeSpreadsheet:
         def worksheet(self, name):
+            if name == "主管權重":
+                return _FakeWorksheetResponsibilities()
+            if name == "員工資料":
+                return _FakeWorksheetEmployees()
             return _FakeWorksheet()
 
     class _FakeClient:
         def open_by_key(self, key):
             return _FakeSpreadsheet()
+
+    # exceptions submodule needed by app.py error handler
+    exceptions_mod = types.ModuleType("gspread.exceptions")
+
+    class APIError(Exception):
+        pass
+
+    exceptions_mod.APIError = APIError
+    gs.exceptions = exceptions_mod
+    sys.modules["gspread.exceptions"] = exceptions_mod
 
     gs.authorize = lambda creds: _FakeClient()
     gs.Client = _FakeClient

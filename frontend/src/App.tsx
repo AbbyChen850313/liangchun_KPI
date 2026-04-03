@@ -4,6 +4,7 @@ import Admin from "./pages/Admin";
 import Bind from "./pages/Bind";
 import Dashboard from "./pages/Dashboard";
 import Score from "./pages/Score";
+import SeasonScore from "./pages/SeasonScore";
 import SysAdmin from "./pages/SysAdmin";
 import "./styles.css";
 
@@ -41,6 +42,7 @@ function AuthenticatedRoutes() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/score" element={<Score />} />
+      <Route path="/season-score" element={<SeasonScore />} />
       <Route path="/admin" element={<Admin />} />
       <Route path="/sysadmin" element={<SysAdmin />} />
       <Route path="*" element={<Navigate to="/" replace />} />

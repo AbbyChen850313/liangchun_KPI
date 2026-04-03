@@ -24,6 +24,7 @@ export default function Score() {
   const empName = decodeURIComponent(params.get("name") ?? "");
   const section = decodeURIComponent(params.get("section") ?? "");
   const quarter = decodeURIComponent(params.get("quarter") ?? "");
+  const isLocked = params.get("isLocked") === "true";
 
   const [scores, setScores] = useState<ScoreItems>({
     item1: "", item2: "", item3: "",
@@ -48,6 +49,15 @@ export default function Score() {
   const { data: myScores } = useApi<Record<string, any>>(
     () => api.get(`/api/scoring/my-scores${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ""}`).then((r) => r.data),
     [quarter]
+  );
+
+  const historyYear = quarter ? quarter.slice(0, 3) : "";
+  const { data: empHistory } = useApi<{ empName: string; year: string; quarters: Record<string, number | null> }>(
+    () =>
+      empName && historyYear
+        ? api.get(`/api/scoring/employee-history?empName=${encodeURIComponent(empName)}&year=${encodeURIComponent(historyYear)}`).then((r) => r.data)
+        : Promise.resolve(null),
+    [empName, historyYear]
   );
 
   // Pre-fill existing scores
@@ -125,6 +135,31 @@ export default function Score() {
           </div>
         </div>
 
+        {empHistory?.quarters && (
+          <div className="history-strip">
+            <div className="history-strip-title">本年加權分歷史</div>
+            <div className="history-strip-quarters">
+              {Object.entries(empHistory.quarters).map(([q, score]) => (
+                <div
+                  key={q}
+                  className={`history-chip${q === quarter ? " current" : ""}`}
+                >
+                  <span className="history-chip-label">{q.slice(-2)}</span>
+                  <span className="history-chip-score">
+                    {score != null ? score.toFixed(1) : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {isLocked && (
+          <div className="deadline-warning" style={{ margin: "12px 0 0" }}>
+            此季度已全員完成評分，僅供檢視。
+          </div>
+        )}
+
         <div className="score-items">
           {!scoreItems ? (
             <div className="loading-hint">載入評分項目中…</div>
@@ -141,7 +176,8 @@ export default function Score() {
                     <button
                       key={g}
                       className={`grade-btn${scores[key] === g ? " selected" : ""}`}
-                      onClick={() => setScores((s) => ({ ...s, [key]: g }))}
+                      onClick={() => !isLocked && setScores((s) => ({ ...s, [key]: g }))}
+                      disabled={isLocked}
                     >
                       {g}
                     </button>
@@ -158,7 +194,8 @@ export default function Score() {
             type="number"
             step="1"
             value={special}
-            onChange={(e) => setSpecial(Number(e.target.value))}
+            onChange={(e) => !isLocked && setSpecial(Number(e.target.value))}
+            readOnly={isLocked}
           />
         </div>
 
@@ -168,7 +205,8 @@ export default function Score() {
             rows={3}
             placeholder="選填"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(e) => !isLocked && setNote(e.target.value)}
+            readOnly={isLocked}
           />
         </div>
 
@@ -187,22 +225,24 @@ export default function Score() {
           </div>
         </div>
 
-        <div className="score-actions">
-          <button
-            className="btn-secondary"
-            onClick={() => handleSave(false)}
-            disabled={saving}
-          >
-            💾 儲存草稿
-          </button>
-          <button
-            className="btn-primary"
-            onClick={() => handleSave(true)}
-            disabled={saving}
-          >
-            ✅ 送出評分
-          </button>
-        </div>
+        {!isLocked && (
+          <div className="score-actions">
+            <button
+              className="btn-secondary"
+              onClick={() => handleSave(false)}
+              disabled={saving}
+            >
+              💾 儲存草稿
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() => handleSave(true)}
+              disabled={saving}
+            >
+              ✅ 送出評分
+            </button>
+          </div>
+        )}
       </div>
 
       {toast && <div className="toast show">{toast}</div>}

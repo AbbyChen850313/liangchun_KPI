@@ -4,7 +4,11 @@
  */
 
 import axios from "axios";
-import type { AnnualSummaryResponse } from "../types";
+import type {
+  AnnualSummaryResponse,
+  QuarterEmployee,
+  SeasonScoreStatus,
+} from "../types";
 import { refreshRole, SESSION_KEY } from "./authRefresh";
 import { liffAdapter } from "../adapters/liff";
 
@@ -52,5 +56,23 @@ api.interceptors.response.use(
 export async function apiGetAnnualSummary(year?: string): Promise<AnnualSummaryResponse> {
   const params = year ? `?year=${encodeURIComponent(year)}` : "";
   const res = await api.get<AnnualSummaryResponse>(`/api/scoring/annual-summary${params}`);
+  return res.data;
+}
+
+export async function apiGetSeasonStatus(year?: string): Promise<SeasonScoreStatus> {
+  const params = year ? `?year=${encodeURIComponent(year)}` : "";
+  const res = await api.get<SeasonScoreStatus>(`/api/scoring/season-status${params}`);
+  return res.data;
+}
+
+export interface QuarterEmployeesResponse {
+  quarter: string;
+  employees: QuarterEmployee[];
+}
+
+export async function apiGetQuarterEmployees(quarter: string): Promise<QuarterEmployeesResponse> {
+  const res = await api.get<QuarterEmployeesResponse>(
+    `/api/scoring/quarter-employees?quarter=${encodeURIComponent(quarter)}`
+  );
   return res.data;
 }

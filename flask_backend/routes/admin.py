@@ -17,6 +17,16 @@ from services.sheets_service import SheetsService
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
 
+_CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value) -> str:
+    """Neutralise CSV/spreadsheet formula injection in user-supplied string values."""
+    s = str(value) if value is not None else ""
+    if s and s[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + s
+    return s
+
 
 def _sheets(is_test: bool) -> SheetsService:
     return SheetsService(is_test=is_test)
@@ -41,6 +51,10 @@ def update_settings():
     if not body:
         return jsonify({"error": "沒有要更新的設定"}), 400
     _sheets(is_test).update_settings(body)
+    logger.info(
+        "AUDIT | route=update_settings | actor=%s(%s) | action=update | keys=%s",
+        g.session["name"], g.session["lineUid"], list(body.keys()),
+    )
     return jsonify({"success": True})
 
 
@@ -61,6 +75,10 @@ def sync_employees():
     """Sync employee list from HR spreadsheet."""
     is_test: bool = g.session.get("isTest", False)
     count = _sheets(is_test).sync_employees_from_hr()
+    logger.info(
+        "AUDIT | route=sync_employees | actor=%s(%s) | action=sync | count=%d",
+        g.session["name"], g.session["lineUid"], count,
+    )
     return jsonify({"success": True, "count": count})
 
 
@@ -91,6 +109,10 @@ def refresh_roles():
     """Re-derive roles for all accounts from Sheets and sync to Firestore."""
     is_test: bool = g.session.get("isTest", False)
     updated_count = _sheets(is_test).refresh_roles_in_firestore()
+    logger.info(
+        "AUDIT | route=refresh_roles | actor=%s(%s) | action=refresh_roles | updatedCount=%d",
+        g.session["name"], g.session["lineUid"], updated_count,
+    )
     return jsonify({"success": True, "updatedCount": updated_count})
 
 
@@ -107,6 +129,10 @@ def batch_reset_scores():
     if not emp_names or not quarter:
         return jsonify({"error": "必須提供 empNames 與 quarter"}), 400
     reset_count = _sheets(is_test).reset_scores_for_employees(quarter, emp_names)
+    logger.info(
+        "AUDIT | route=batch_reset_scores | actor=%s(%s) | action=reset | quarter=%s | empNames=%s",
+        g.session["name"], g.session["lineUid"], quarter, emp_names,
+    )
     return jsonify({"success": True, "resetCount": reset_count})
 
 
@@ -161,6 +187,11 @@ def batch_submit_scores():
             logger.exception("batch_submit failed: %s/%s", manager_name, emp_name)
             failed.append({"empName": emp_name, "error": str(exc)})
 
+    logger.info(
+        "AUDIT | route=batch_submit_scores | actor=%s(%s) | action=batch_submit"
+        " | quarter=%s | submitted=%d | failed=%d",
+        g.session["name"], g.session["lineUid"], quarter, submitted, len(failed),
+    )
     return jsonify({"success": True, "submitted": submitted, "failed": failed})
 
 
@@ -186,12 +217,12 @@ def export_scores_csv():
     for s in scores:
         scores_map = s.get("scores", {})
         writer.writerow([
-            s.get("quarter"), s.get("managerName"), s.get("empName"),
-            s.get("section"), s.get("weight"),
+            s.get("quarter"), _csv_safe(s.get("managerName")), _csv_safe(s.get("empName")),
+            _csv_safe(s.get("section")), s.get("weight"),
             scores_map.get("item1"), scores_map.get("item2"), scores_map.get("item3"),
             scores_map.get("item4"), scores_map.get("item5"), scores_map.get("item6"),
             s.get("rawScore"), s.get("special"), s.get("finalScore"),
-            s.get("weightedScore"), s.get("note"), s.get("status"), s.get("updatedAt"),
+            s.get("weightedScore"), _csv_safe(s.get("note")), s.get("status"), s.get("updatedAt"),
         ])
 
     csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel
@@ -244,7 +275,7 @@ def export_annual_scores_csv():
         + ["全年加總", "已完成季度數"]
     )
     for emp, data in sorted(summary.items()):
-        row = [emp, emp_manager.get(emp, ""), emp_section.get(emp, "")]
+        row = [_csv_safe(emp), _csv_safe(emp_manager.get(emp, "")), _csv_safe(emp_section.get(emp, ""))]
         for q in quarters:
             v = data["quarters"].get(q)
             row.append(v if v is not None else "未評分")

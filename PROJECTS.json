@@ -2,7 +2,7 @@
   "projects": [
     {
       "key": "survey",
-      "name": "泰旺問卷",
+      "name": "良全問卷",
       "repo": "https://github.com/AbbyChen850313/liangchun_survey.git",
       "priority": 1,
       "active": true

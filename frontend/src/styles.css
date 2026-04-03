@@ -326,3 +326,48 @@ body {
   opacity: 0; transition: opacity .2s;
 }
 .toast.show { opacity: 1; }
+
+/* ── Score history strip ──────────────────────────────────────────── */
+.history-strip {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  border: 1px solid #e0e4ea;
+}
+.history-strip-title {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 8px;
+  font-weight: 500;
+  letter-spacing: .4px;
+}
+.history-strip-quarters {
+  display: flex;
+  gap: 8px;
+}
+.history-chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid #e0e4ea;
+}
+.history-chip.current {
+  border-color: #2196f3;
+  background: #e3f2fd;
+}
+.history-chip-label {
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 2px;
+}
+.history-chip-score {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+.history-chip.current .history-chip-score { color: #1565c0; }
