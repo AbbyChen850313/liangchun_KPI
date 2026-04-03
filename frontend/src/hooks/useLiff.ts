@@ -121,6 +121,9 @@ export function useLiff(): LiffState {
       }
 
       const accessToken = liffAdapter.getAccessToken();
+      if (!accessToken) {
+        throw new Error("無法取得 LINE 授權，請關閉後重新開啟此頁面");
+      }
       const { data } = await api.post("/api/auth/session", {
         accessToken,
         isTest: IS_TEST,
