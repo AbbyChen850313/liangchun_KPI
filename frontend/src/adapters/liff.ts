@@ -6,7 +6,9 @@
 const LIFF_ID = import.meta.env.VITE_LIFF_ID as string;
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 const LIFF_INIT_TIMEOUT_MS = 12_000;
-const LIFF_ENDPOINT = "https://linchun-hr.web.app";
+const LIFF_ENDPOINT = import.meta.env.VITE_IS_TEST === "true"
+  ? "https://linchun-hr-test.web.app"
+  : "https://linchun-hr.web.app";
 
 declare global {
   interface Window {
