@@ -94,6 +94,12 @@ def _upsert_score(status: str):
     if emp_name not in section_employee_names:
         return jsonify({"error": "此員工不在指定科別中"}), 403
 
+    # [P1] Duplicate submission guard — applied only before final submit
+    if status == "已送出":
+        existing = sheets.get_scores_by_manager(quarter, manager_name)
+        if any(s["empName"] == emp_name and s["status"] == "已送出" for s in existing):
+            return jsonify({"error": "此員工本季度已完成評分，無法重複提交"}), 409
+
     score_data = build_score_record(
         manager_name, line_uid, emp_name, section,
         scores_raw, special, note, quarter,
@@ -104,6 +110,15 @@ def _upsert_score(status: str):
         return jsonify({"error": "找不到此科別的主管權重設定"}), 400
 
     sheets.upsert_score(score_data)
+
+    if status == "已送出":
+        logger.info(
+            "AUDIT | route=submit_score | actor=%s(%s) | action=submit"
+            " | quarter=%s | empName=%s | section=%s | rawScore=%.1f"
+            " | permSections=%s",
+            manager_name, line_uid, quarter, emp_name, section,
+            score_data["rawScore"], sorted(manager_sections),
+        )
 
     return jsonify({
         "success": True,

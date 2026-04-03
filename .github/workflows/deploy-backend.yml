@@ -26,9 +26,26 @@ jobs:
           region: asia-east1
           flags: "--allow-unauthenticated"
 
+  deploy-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: kaohe-backend-test
+          source: ./flask_backend
+          project_id: linchun-hr
+          region: asia-east1
+          flags: "--allow-unauthenticated"
+
   notify-failure:
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [deploy, deploy-test]
     if: failure()
     steps:
       - name: Push LINE notification

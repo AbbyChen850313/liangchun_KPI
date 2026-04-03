@@ -2,9 +2,11 @@
 
 ### 架構 & 決策
 - [Cycle 1 架構決策](memory/decisions_cycle1.md) — 6項核心決策、放棄的替代方案、跨決策依賴
+- [Cycle 2 架構決策](memory/decisions_cycle2.md) — 四季評分模型、快照模式、狀態機、版本化、測試路由
 
 ### 問題追蹤
 - [Cycle 1 發現的坑](memory/issues_cycle1.md) — 7組已解決的缺陷、邊界情況、未來改進項
+- [Cycle 2 發現的坑](memory/issues_cycle2.md) — 8組四季評分實現中的缺陷、邊界情況、未來改進項
 
 ### 使用者
 - (待新增)

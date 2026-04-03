@@ -156,7 +156,15 @@ def batch_submit_scores():
     sheets = _sheets(is_test)
     responsibilities = sheets.get_manager_responsibilities()
 
-    submitted, failed = 0, []
+    # [P2] Pre-fetch submitted keys for idempotency guard — avoids re-submitting
+    # records already in 已送出 state, treating them as no-ops rather than errors.
+    submitted_keys = {
+        (s["managerName"], s["empName"])
+        for s in sheets.get_all_scores(quarter)
+        if s["status"] == "已送出"
+    }
+
+    submitted, skipped, failed = 0, 0, []
     for entry in entries:
         manager_name = (entry.get("managerName") or "").strip()
         manager_uid = (entry.get("managerLineUid") or "").strip()
@@ -168,6 +176,11 @@ def batch_submit_scores():
 
         if not manager_name or not emp_name or not section:
             failed.append({"empName": emp_name or "?", "error": "缺少必要欄位"})
+            continue
+
+        # [P2] Idempotency: silently skip entries already submitted
+        if (manager_name, emp_name) in submitted_keys:
+            skipped += 1
             continue
 
         # AC2: validate all 6 items per entry; don't abort the whole batch
@@ -189,10 +202,10 @@ def batch_submit_scores():
 
     logger.info(
         "AUDIT | route=batch_submit_scores | actor=%s(%s) | action=batch_submit"
-        " | quarter=%s | submitted=%d | failed=%d",
-        g.session["name"], g.session["lineUid"], quarter, submitted, len(failed),
+        " | quarter=%s | submitted=%d | skipped=%d | failed=%d",
+        g.session["name"], g.session["lineUid"], quarter, submitted, skipped, len(failed),
     )
-    return jsonify({"success": True, "submitted": submitted, "failed": failed})
+    return jsonify({"success": True, "submitted": submitted, "skipped": skipped, "failed": failed})
 
 
 # ── GET /api/admin/export-csv ──────────────────────────────────────────────

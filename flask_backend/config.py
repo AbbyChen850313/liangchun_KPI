@@ -62,6 +62,8 @@ LINE_LOGIN_CHANNEL_ID_TEST: str = LIFF_ID_TEST.split("-")[0]
 ALLOWED_ORIGINS: list[str] = [
     "https://linchun-hr.web.app",
     "https://linchun-hr.firebaseapp.com",
+    "https://linchun-hr-test.web.app",
+    "https://linchun-hr-test.firebaseapp.com",
     "http://localhost:5173",
     "http://localhost:3000",
 ]

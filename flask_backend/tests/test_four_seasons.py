@@ -297,6 +297,21 @@ class TestFourSeasonSimulation:
                     f"{quarter} 員工 {emp['name']} scoreStatus={emp['scoreStatus']}"
                 )
 
+    def test_duplicate_submit_rejected(self, client):
+        """P1: 同一主管對同一員工在同季度二次送出應被拒絕（409）。"""
+        res = client.post(
+            "/api/scoring/submit",
+            headers=_auth(),
+            json=_all_甲_payload("115Q1"),  # 115Q1 已在 test_ac1 中送出
+        )
+        assert res.status_code == 409, (
+            f"重複送出應回 409，實際回 {res.status_code}: {res.get_json()}"
+        )
+        body = res.get_json()
+        assert "已完成評分" in body.get("error", ""), (
+            f"錯誤訊息應含「已完成評分」，實際為：{body}"
+        )
+
     def test_draft_cannot_overwrite_submitted(self, client):
         """P0-1 防護：已送出的 Q1 不被草稿覆寫。"""
         payload = _all_甲_payload("115Q1")

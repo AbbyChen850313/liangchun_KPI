@@ -475,7 +475,11 @@ class SheetsService:
                 and _safe(row, c["empName"]) == score_data["empName"]
             ):
                 existing_status = _safe(row, c["status"])
-                if existing_status == "已送出" and score_data.get("status") == "草稿":
+                if existing_status == "已送出":
+                    if score_data.get("status") == "已送出":
+                        raise ValueError(
+                            f"duplicate_submission:{score_data.get('empName')}"
+                        )
                     return  # 已送出記錄不允許被草稿覆寫
                 _with_retry(lambda: ws.update(
                     f"A{i}:R{i}",
