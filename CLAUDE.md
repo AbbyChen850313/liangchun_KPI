@@ -30,3 +30,26 @@
 - 任何測試必須在測試 Channel（2008337190）進行，禁止動正式帳號
 - 做 Rich Menu、綁定等大動作前，先用關鍵字（`ping`）確認 Webhook 接到正確帳號
 - `_getBotToken()` 若 `使用測試Channel != true` 會拋錯，這是刻意的保護
+
+## 7. QA Checklist
+
+每次任務完成後，QA agent 必須對照此清單，標記每項是否適用並執行。
+- `[auto]`：可用 curl / script / build 自動驗證
+- `[manual]`：需要真人在 LINE 或手機上操作才能驗，loop 推通知給用戶但不等待
+
+```
+[auto]  後端 build 成功（docker build 或 gcloud run deploy 無錯）
+[auto]  主要 API endpoint 回應正確（curl /api/auth/check → 401，不是 404/500）
+[auto]  前端 npm run build 無 TypeScript 錯誤
+[auto]  git push 成功、CI/CD 觸發
+[manual:liff]   在 LINE app 內開啟 LIFF URL，頁面正常載入（不出現 LIFF error）
+[manual:liff]   LIFF 取得 access token 成功（不回 400）
+[manual:liff]   登入/綁定流程走到底，能取得 session token
+[manual:webhook] 傳送測試訊息到 LINE bot，確認 Webhook 收到（Cloud Run log 有記錄）
+[manual:sheet]  開啟 Google Sheet 確認資料正確寫入
+```
+
+**規則：**
+- `[auto]` 項目 QA agent 必須全部執行，任何失敗都要修復再繼續
+- `[manual]` 項目 QA agent 評估本次修改是否觸及該項（例如只改 CSS 不需驗 webhook），觸及的才列出推通知
+- QA agent 輸出格式：`MANUAL_QA: <項目1> | <項目2>` 或 `MANUAL_QA: none`
