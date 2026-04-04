@@ -11,12 +11,19 @@ import re
 
 from flask import Blueprint, g, jsonify, request, make_response
 
+from extensions import limiter
+from services.audit_service import write_audit_log
 from services.auth_service import require_hr, require_sysadmin
 from services.scoring_service import aggregate_annual_scores, annual_quarters, build_score_record
 from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
+
+# [P1] Whitelist of editable settings keys — unknown keys are rejected
+_ALLOWED_SETTINGS_KEYS = frozenset({
+    "當前季度", "評分開始日期", "評分結束日期", "綁定驗證碼",
+})
 
 _CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
 
@@ -51,10 +58,20 @@ def update_settings():
     body = request.get_json(silent=True) or {}
     if not body:
         return jsonify({"error": "沒有要更新的設定"}), 400
+
+    # [P1] Reject unknown keys to prevent arbitrary field injection
+    unknown_keys = set(body.keys()) - _ALLOWED_SETTINGS_KEYS
+    if unknown_keys:
+        return jsonify({"error": f"不允許的設定欄位：{sorted(unknown_keys)}"}), 400
+
     _sheets(is_test).update_settings(body)
     logger.info(
         "AUDIT | route=update_settings | actor=%s(%s) | action=update | keys=%s",
         g.session["name"], g.session["lineUid"], list(body.keys()),
+    )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="update_settings", details={"keys": list(body.keys())}, is_test=is_test,
     )
     return jsonify({"success": True})
 
@@ -80,6 +97,10 @@ def sync_employees():
         "AUDIT | route=sync_employees | actor=%s(%s) | action=sync | count=%d",
         g.session["name"], g.session["lineUid"], count,
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="sync_employees", details={"count": count}, is_test=is_test,
+    )  # [P2-AUDIT-02]
     return jsonify({"success": True, "count": count})
 
 
@@ -114,6 +135,10 @@ def refresh_roles():
         "AUDIT | route=refresh_roles | actor=%s(%s) | action=refresh_roles | updatedCount=%d",
         g.session["name"], g.session["lineUid"], updated_count,
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="refresh_roles", details={"updatedCount": updated_count}, is_test=is_test,
+    )  # [P1-AUDIT-01]
     return jsonify({"success": True, "updatedCount": updated_count})
 
 
@@ -121,6 +146,7 @@ def refresh_roles():
 
 @admin_bp.route("/batch-reset", methods=["POST"])
 @require_hr
+@limiter.limit("5/hour")
 def batch_reset_scores():
     """Reset scoring records for a list of employee names in the current quarter."""
     is_test: bool = g.session.get("isTest", False)
@@ -134,6 +160,12 @@ def batch_reset_scores():
         "AUDIT | route=batch_reset_scores | actor=%s(%s) | action=reset | quarter=%s | empNames=%s",
         g.session["name"], g.session["lineUid"], quarter, emp_names,
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="batch_reset_scores",
+        details={"quarter": quarter, "empNames": emp_names, "resetCount": reset_count},
+        is_test=is_test,
+    )  # [P1-AUDIT-01]
     return jsonify({"success": True, "resetCount": reset_count})
 
 
@@ -141,6 +173,7 @@ def batch_reset_scores():
 
 @admin_bp.route("/batch-submit", methods=["POST"])
 @require_hr
+@limiter.limit("5/hour")
 def batch_submit_scores():
     """
     HR proxy: submit scores for multiple employees/managers in one request.
@@ -172,11 +205,22 @@ def batch_submit_scores():
         emp_name = (entry.get("empName") or "").strip()
         section = (entry.get("section") or "").strip()
         scores_raw: dict = entry.get("scores") or {}
-        special = float(entry.get("special") or 0)
+        special_raw = float(entry.get("special") or 0)
         note = (entry.get("note") or "").strip()
 
         if not manager_name or not emp_name or not section:
             failed.append({"empName": emp_name or "?", "error": "缺少必要欄位"})
+            continue
+
+        # [P1] Enforce special score range to prevent abnormal bonus manipulation
+        if not (-20 <= special_raw <= 20):
+            failed.append({"empName": emp_name, "error": "special 加減分必須在 -20 到 20 之間"})
+            continue
+        special = special_raw
+
+        # [P0] Enforce note length limit per entry
+        if len(note) > 500:
+            failed.append({"empName": emp_name, "error": "備註不可超過 500 字"})
             continue
 
         # [P2] Idempotency: silently skip entries already submitted
@@ -206,6 +250,12 @@ def batch_submit_scores():
         " | quarter=%s | submitted=%d | skipped=%d | failed=%d",
         g.session["name"], g.session["lineUid"], quarter, submitted, skipped, len(failed),
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="batch_submit_scores",
+        details={"quarter": quarter, "submitted": submitted, "skipped": skipped, "failedCount": len(failed)},
+        is_test=is_test,
+    )  # [P1-AUDIT-01]
     return jsonify({"success": True, "submitted": submitted, "skipped": skipped, "failed": failed})
 
 
@@ -225,6 +275,10 @@ def export_scores_csv():
         "AUDIT | route=export_scores_csv | actor=%s(%s) | action=export_csv | quarter=%s | count=%d",
         g.session["name"], g.session["lineUid"], quarter, len(scores),
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="export_scores_csv", details={"quarter": quarter, "count": len(scores)}, is_test=is_test,
+    )  # [P2-AUDIT-02]
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -244,10 +298,12 @@ def export_scores_csv():
         ])
 
     csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel
+    # [P1] Strip non-digit characters to prevent Content-Disposition header injection
+    safe_quarter = re.sub(r"[^0-9]", "", quarter)
     response = make_response(csv_bytes)
     response.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
     response.headers["Content-Disposition"] = (
-        f'attachment; filename="scores_{quarter}.csv"'
+        f'attachment; filename="scores_{safe_quarter}.csv"'
     )
     return response
 
@@ -291,6 +347,10 @@ def export_annual_scores_csv():
         "AUDIT | route=export_annual_scores_csv | actor=%s(%s) | action=export_annual_csv | year=%s | employees=%d",
         g.session["name"], g.session["lineUid"], year, len(summary),
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="export_annual_scores_csv", details={"year": year, "employees": len(summary)}, is_test=is_test,
+    )  # [P2-AUDIT-02]
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(

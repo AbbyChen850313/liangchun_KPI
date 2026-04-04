@@ -10,6 +10,7 @@ import re
 
 from flask import Blueprint, g, jsonify, request
 
+from services.audit_service import write_audit_log
 from services.auth_service import require_auth, require_hr, require_manager
 from services.scoring_service import (
     aggregate_annual_scores,
@@ -69,12 +70,19 @@ def _upsert_score(status: str):
     emp_name = (body.get("empName") or "").strip()
     section = (body.get("section") or "").strip()
     scores_raw: dict = body.get("scores") or {}
-    special = float(body.get("special") or 0)
+    special_raw = float(body.get("special") or 0)
+    if not (-20 <= special_raw <= 20):
+        return jsonify({"error": "special 加減分必須在 -20 到 20 之間"}), 400
+    special = special_raw
     note = (body.get("note") or "").strip()
     quarter = (body.get("quarter") or "").strip()
 
     if not emp_name or not section:
         return jsonify({"error": "缺少員工姓名或科別"}), 400
+
+    # [P0] Limit note length to prevent unbounded storage and XSS surface
+    if len(note) > 500:
+        return jsonify({"error": "備註不可超過 500 字"}), 400
 
     sheets = _sheets(is_test)
     settings = sheets.get_settings()
@@ -131,6 +139,17 @@ def _upsert_score(status: str):
             manager_name, line_uid, quarter, emp_name, section,
             score_data["rawScore"], sorted(manager_sections),
         )
+        write_audit_log(
+            actor_name=manager_name, actor_uid=line_uid,
+            action="submit_score",
+            details={
+                "quarter": quarter,
+                "empName": emp_name,
+                "section": section,
+                "rawScore": score_data["rawScore"],
+            },
+            is_test=is_test,
+        )  # [P1-AUDIT-04]
 
     return jsonify({
         "success": True,

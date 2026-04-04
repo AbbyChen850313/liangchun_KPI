@@ -84,6 +84,9 @@ def create_app() -> Flask:
             "Content-Security-Policy", "default-src 'self'"
         )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")                              # [P1-HEADERS-01]
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")   # [P1-HEADERS-01]
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), camera=()")      # [P1-HEADERS-01]
         return response
 
     return app

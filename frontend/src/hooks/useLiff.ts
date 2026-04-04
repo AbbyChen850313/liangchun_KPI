@@ -12,7 +12,6 @@
 import axios from "axios";
 import { useEffect, useRef, useState } from "react";
 import { liffAdapter } from "../adapters/liff";
-import { api } from "../services/api";
 import { refreshRole, SESSION_KEY } from "../services/authRefresh";
 
 // Raw base URL — used by the session-check call that must bypass the shared
@@ -25,6 +24,10 @@ const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
 const LINE_LOGIN_CHANNEL_ID = IS_TEST ? "2009619528" : "2009611318";
 const LINE_OAUTH_STATE_KEY = "line_oauth_state";
 const LINE_OAUTH_REDIRECT_PATH = "/line-auth-callback";
+
+// Persists across LIFF redirects (useRef resets on page navigation).
+// sessionStorage survives in-tab navigation but clears when the tab is closed.
+const LIFF_LOGIN_ATTEMPTED_KEY = "liff_login_attempted";
 
 export interface LiffState {
   ready: boolean;
@@ -78,8 +81,11 @@ export function useLiff(): LiffState {
     role: null,
   });
 
-  // Guard refs — prevent double-init and double-login across React StrictMode
-  // double-invocations, LIFF redirects, and page reloads triggered elsewhere.
+  // Guard refs — prevent double-init within the same React lifecycle (StrictMode).
+  // loginAttemptedRef uses sessionStorage instead of useRef because liff.login()
+  // navigates away and back, resetting all useRef values. sessionStorage persists
+  // across in-tab navigations so the "already tried once" guard survives the
+  // LIFF redirect and prevents the infinite login loop.
   const initStartedRef = useRef(false);
   const loginAttemptedRef = useRef(false);
 
@@ -145,20 +151,37 @@ export function useLiff(): LiffState {
         await liffAdapter.init();
 
         if (!liffAdapter.isLoggedIn()) {
-          // Guard: only call liff.login() once. If we are already back from
-          // a LIFF redirect and isLoggedIn() is still false, treat it as an
-          // unrecoverable error rather than looping indefinitely.
-          if (loginAttemptedRef.current) {
+          // Guard: only call liff.login() once per tab session.
+          //
+          // useRef is NOT sufficient here: liff.login() navigates the page away
+          // and LIFF redirects back, which resets all React state including refs.
+          // sessionStorage survives in-tab navigation, so it catches the case
+          // where we're already returning from a LIFF redirect but isLoggedIn()
+          // is still false — that means LIFF auth genuinely failed, so we surface
+          // an error instead of looping indefinitely.
+          const alreadyAttempted =
+            loginAttemptedRef.current ||
+            sessionStorage.getItem(LIFF_LOGIN_ATTEMPTED_KEY) === "1";
+
+          if (alreadyAttempted) {
+            // Clear the flag so the user can retry by reloading manually.
+            sessionStorage.removeItem(LIFF_LOGIN_ATTEMPTED_KEY);
+            loginAttemptedRef.current = false;
             setState((prev) => ({
               ...prev,
               error: "LINE 登入失敗，請關閉後重新開啟此頁面",
             }));
             return;
           }
+
           loginAttemptedRef.current = true;
+          sessionStorage.setItem(LIFF_LOGIN_ATTEMPTED_KEY, "1");
           liffAdapter.login(); // navigates away; no further code runs
           return;
         }
+
+        // Successfully logged in — clear the login-attempt flag.
+        sessionStorage.removeItem(LIFF_LOGIN_ATTEMPTED_KEY);
 
         const accessToken = liffAdapter.getAccessToken();
         if (!accessToken) {

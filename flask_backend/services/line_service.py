@@ -18,10 +18,13 @@ _LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 _LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token"
 
 
-def verify_access_token(access_token: str) -> dict | None:
+def verify_access_token(access_token: str, is_test: bool = False) -> dict | None:
     """
     Verify a LIFF access token and return the user profile dict,
     or None if verification fails.
+
+    [P0] Validates that the token's client_id matches the expected LINE Login
+    channel to prevent cross-channel token reuse attacks.
 
     Returns: { "userId": str, "displayName": str, "pictureUrl": str }
     """
@@ -32,6 +35,18 @@ def verify_access_token(access_token: str) -> dict | None:
     )
     if verify_resp.status_code != 200:
         logger.warning("LINE token verification failed: %s", verify_resp.text)
+        return None
+
+    # [P0] Reject tokens issued by a different LINE channel
+    expected_channel_id = (
+        config.LINE_LOGIN_CHANNEL_ID_TEST if is_test else config.LINE_LOGIN_CHANNEL_ID
+    )
+    actual_client_id = verify_resp.json().get("client_id", "")
+    if actual_client_id != expected_channel_id:
+        logger.warning(
+            "LINE token channel_id mismatch: expected=%s actual=%s",
+            expected_channel_id, actual_client_id,
+        )
         return None
 
     profile_resp = requests.get(

@@ -204,6 +204,7 @@ export default function Score() {
           <textarea
             rows={3}
             placeholder="選填"
+            maxLength={500}
             value={note}
             onChange={(e) => !isLocked && setNote(e.target.value)}
             readOnly={isLocked}

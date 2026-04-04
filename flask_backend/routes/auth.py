@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 
 from flask import Blueprint, g, jsonify, request
 
 import config
 from extensions import limiter
+from services.audit_service import write_audit_log
 from services.auth_service import (
     decode_bind_token,
     issue_bind_token,
@@ -34,7 +36,7 @@ def _session_from_access_token(access_token: str, is_test: bool):
     Shared logic: verify access token, look up account, return JSON response.
     Used by both LIFF session and LINE Login OAuth session endpoints.
     """
-    profile = verify_access_token(access_token)
+    profile = verify_access_token(access_token, is_test=is_test)
     if not profile:
         return jsonify({"error": "LINE Token 驗證失敗"}), 401
 
@@ -101,6 +103,10 @@ def line_oauth_session():
     if not code or not redirect_uri:
         return jsonify({"error": "缺少 code 或 redirectUri"}), 400
 
+    # [P0] Whitelist validation — reject redirect_uri values not registered in config
+    if redirect_uri not in config.ALLOWED_REDIRECT_URIS:
+        return jsonify({"error": "redirect_uri 不在許可清單中"}), 400
+
     access_token = exchange_auth_code(code, redirect_uri, is_test)
     if not access_token:
         return jsonify({"error": "LINE 授權失敗，請重試"}), 401
@@ -142,7 +148,7 @@ def bind_account():
         line_uid: str = payload["lineUid"]
         display_name: str = payload.get("displayName", "")
     elif access_token:
-        profile = verify_access_token(access_token)
+        profile = verify_access_token(access_token, is_test=is_test)
         if not profile:
             return jsonify({"error": "LINE Token 驗證失敗"}), 401
         line_uid = profile["userId"]
@@ -172,6 +178,12 @@ def bind_account():
         "AUDIT | route=bind_account | actor=%s(%s) | action=bind | target=%s",
         name, line_uid, employee_id,
     )
+    write_audit_log(
+        actor_name=name, actor_uid=line_uid,
+        action="bind_account",
+        details={"employeeId": employee_id, "displayName": display_name},
+        is_test=is_test,
+    )  # [P1-AUDIT-03]
 
     # Notify binding success via LINE message; failure must not undo a successful bind
     try:
@@ -273,6 +285,10 @@ def reset_account():
         "AUDIT | route=reset_account | actor=%s(%s) | action=unbind | target=%s",
         g.session["name"], g.session["lineUid"], target_uid,
     )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="reset_account", details={"targetLineUid": target_uid}, is_test=is_test,
+    )  # [P1-AUDIT-01]
     return jsonify({"success": True})
 
 
@@ -292,4 +308,4 @@ def verify_bind_code():
 
     settings = _sheets(is_test).get_settings()
     expected = settings.get("綁定驗證碼", "HR0000")
-    return jsonify({"valid": code == expected})
+    return jsonify({"valid": hmac.compare_digest(code, expected)})  # [P2-TIMING-01]

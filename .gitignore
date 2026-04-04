@@ -8,6 +8,7 @@ firebase-adminsdk*.json
 .env
 .env.*
 flask_backend/.env
+.notify_secret  # [P0-SECRET-01] GAS webhook secret — never commit
 
 # Python
 __pycache__/
