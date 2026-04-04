@@ -616,7 +616,7 @@ class SheetsService:
         ("副總", "主管"),
         ("總經理", "主管"),
     ]
-    _DEFAULT_ROLE = "員工"
+    _DEFAULT_ROLE = "同仁"
 
     def _derive_role_from_job_title(self, job_title: str) -> str:
         """Return the role string inferred from a job title."""
