@@ -14,7 +14,7 @@ from flask import Blueprint, g, jsonify, request, make_response
 from extensions import limiter
 from services.audit_service import write_audit_log
 from services.auth_service import require_hr, require_sysadmin
-from services.scoring_service import aggregate_annual_scores, annual_quarters, build_score_record
+from services.scoring_service import aggregate_annual_scores, annual_quarters, build_score_record, current_quarter as _current_quarter
 from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
@@ -373,6 +373,106 @@ def export_annual_scores_csv():
         f'attachment; filename="annual_{year}.csv"'
     )
     return resp
+
+
+# ── GET /api/admin/annual-adjust ──────────────────────────────────────────
+
+@admin_bp.route("/annual-adjust", methods=["GET"])
+@require_hr
+def get_annual_adjust():
+    """Return all employees' annual average + HR special adjustment for a given year.
+
+    Query param: year (ROC year, e.g. 115). Defaults to the year of 當前季度.
+    Response: { year, rows: [{ empName, annualAvg, completedCount, annualSpecial, finalAnnualScore }] }
+    """
+    is_test: bool = g.session.get("isTest", False)
+    year = request.args.get("year", "").strip()
+    if not year:
+        settings = _sheets(is_test).get_settings()
+        quarter = settings.get("當前季度") or _current_quarter()
+        year = quarter[:3]
+    if not re.match(r"^\d{3}$", year) or not (100 <= int(year) <= 200):
+        return jsonify({"error": "year 格式錯誤，請使用民國三位數年份（如 115）"}), 400
+
+    sheets = _sheets(is_test)
+    quarters = annual_quarters(int(year))
+    all_scores = sheets.get_all_scores_for_year(year)
+
+    emp_map: dict[str, dict[str, float | None]] = {}
+    for s in all_scores:
+        emp = s["empName"]
+        if emp not in emp_map:
+            emp_map[emp] = {q: None for q in quarters}
+        if s["status"] == "已送出":
+            emp_map[emp][s["quarter"]] = s.get("weightedScore")
+
+    summary = aggregate_annual_scores(emp_map)
+    adj_map: dict[str, float] = {
+        a["empName"]: a["special"]
+        for a in sheets.get_annual_adjustments(year)
+    }
+
+    rows = []
+    for emp_name, data in sorted(summary.items()):
+        completed_count: int = data["completedCount"]
+        annual_total: float = data["annualTotal"]
+        annual_avg = round(annual_total / completed_count, 2) if completed_count > 0 else 0.0
+        annual_special = adj_map.get(emp_name, 0.0)
+        rows.append({
+            "empName": emp_name,
+            "annualAvg": annual_avg,
+            "completedCount": completed_count,
+            "annualSpecial": annual_special,
+            "finalAnnualScore": round(annual_avg + annual_special, 2),
+        })
+
+    return jsonify({"year": year, "rows": rows})
+
+
+# ── POST /api/admin/annual-adjust ─────────────────────────────────────────
+
+@admin_bp.route("/annual-adjust", methods=["POST"])
+@require_hr
+@limiter.limit("20/hour")
+def set_annual_adjust():
+    """Set HR annual special adjustment for an employee.
+
+    Body: { year, empName, special, note? }
+    """
+    is_test: bool = g.session.get("isTest", False)
+    body = request.get_json(silent=True) or {}
+    year = (body.get("year") or "").strip()
+    emp_name = (body.get("empName") or "").strip()
+    note = (body.get("note") or "").strip()
+
+    if not year or not emp_name:
+        return jsonify({"error": "必須提供 year 與 empName"}), 400
+    if not re.match(r"^\d{3}$", year) or not (100 <= int(year) <= 200):
+        return jsonify({"error": "year 格式錯誤，請使用民國三位數年份"}), 400
+
+    try:
+        special = float(body.get("special", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "special 必須是數字"}), 400
+
+    if not (-20 <= special <= 20):
+        return jsonify({"error": "年度加減分必須在 -20 到 20 之間"}), 400
+    if len(note) > 500:
+        return jsonify({"error": "備註不可超過 500 字"}), 400
+
+    _sheets(is_test).upsert_annual_adjustment(year, emp_name, special, note)
+    logger.info(
+        "AUDIT | route=set_annual_adjust | actor=%s(%s) | action=annual_adjust"
+        " | year=%s | empName=%s | special=%s",
+        g.session["name"], g.session["lineUid"], year, emp_name, special,
+    )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="set_annual_adjust",
+        details={"year": year, "empName": emp_name, "special": special},
+        is_test=is_test,
+    )
+    return jsonify({"success": True})
 
 
 # ── GET /api/admin/score-comparison ──────────────────────────────────────

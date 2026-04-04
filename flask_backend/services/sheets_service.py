@@ -48,6 +48,15 @@ _COL_WEIGHT = {
     "weight": 5,
 }
 
+# Column indices (0-based) for 年度調整 sheet
+_COL_ANNUAL_ADJ = {
+    "year": 0,
+    "empName": 1,
+    "special": 2,
+    "note": 3,
+    "updatedAt": 4,
+}
+
 # Column indices (0-based) for 評分記錄 sheet
 _COL_SCORE = {
     "quarter": 0,
@@ -647,3 +656,61 @@ class SheetsService:
 
         logger.info("refresh_roles_in_firestore: updated %d accounts (env=%s)", updated, collection_name)
         return updated
+
+    # ── Annual HR adjustments (年度調整) ──────────────────────────────────────
+
+    def _annual_adj_ws(self) -> gspread.Worksheet:
+        """Return (or create) the 年度調整 worksheet."""
+        try:
+            return self.worksheet("年度調整")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = self._ss().add_worksheet("年度調整", rows=1000, cols=5)
+            ws.append_row(
+                ["年份", "員工", "加減分", "備註", "更新時間"],
+                value_input_option="USER_ENTERED",
+            )
+            return ws
+
+    def get_annual_adjustments(self, year: str) -> list[dict]:
+        """Return all annual HR special adjustments for a given ROC year."""
+        try:
+            ws = self._annual_adj_ws()
+        except Exception:
+            return []
+        rows = _cached_rows(ws, self.is_test, "年度調整")
+        c = _COL_ANNUAL_ADJ
+        return [
+            {
+                "year": _safe(row, c["year"]),
+                "empName": _safe(row, c["empName"]),
+                "special": float(_safe(row, c["special"]) or 0),
+                "note": _safe(row, c["note"]),
+                "updatedAt": _safe(row, c["updatedAt"]),
+            }
+            for row in rows[1:]
+            if _safe(row, c["year"]) == year and _safe(row, c["empName"])
+        ]
+
+    def upsert_annual_adjustment(
+        self, year: str, emp_name: str, special: float, note: str
+    ) -> None:
+        """Insert or overwrite an annual HR adjustment for an employee."""
+        ws = self._annual_adj_ws()
+        rows = _cached_rows(ws, self.is_test, "年度調整")
+        c = _COL_ANNUAL_ADJ
+        new_row = [
+            year,
+            emp_name,
+            special,
+            note,
+            datetime.now().strftime("%Y/%m/%d %H:%M:%S"),
+        ]
+        for i, row in enumerate(rows[1:], start=2):
+            if _safe(row, c["year"]) == year and _safe(row, c["empName"]) == emp_name:
+                _with_retry(lambda i=i, r=new_row: ws.update(
+                    f"A{i}:E{i}", [r], value_input_option="USER_ENTERED"
+                ))
+                _invalidate(self.is_test, "年度調整")
+                return
+        _with_retry(lambda: ws.append_row(new_row, value_input_option="USER_ENTERED"))
+        _invalidate(self.is_test, "年度調整")

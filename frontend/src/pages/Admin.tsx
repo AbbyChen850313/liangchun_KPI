@@ -7,9 +7,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
-import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow } from "../types";
+import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow, AnnualAdjustRow } from "../types";
 
-type Tab = "progress" | "settings" | "employees" | "batch" | "comparison";
+type Tab = "progress" | "settings" | "employees" | "batch" | "comparison" | "annual";
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Admin() {
       </div>
 
       <div className="tab-bar">
-        {(["progress", "settings", "employees", "batch", "comparison"] as Tab[]).map((t) => (
+        {(["progress", "settings", "employees", "batch", "comparison", "annual"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`tab-btn${tab === t ? " active" : ""}`}
@@ -41,6 +41,7 @@ export default function Admin() {
       {tab === "employees" && <EmployeesTab />}
       {tab === "batch" && <BatchScoringTab />}
       {tab === "comparison" && <ScoreComparisonTab />}
+      {tab === "annual" && <AnnualAdjustTab />}
     </div>
   );
 }
@@ -310,7 +311,7 @@ function EmployeesTab() {
 }
 
 function tabLabel(t: Tab): string {
-  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分", comparison: "雙評比較" }[t]!;
+  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分", comparison: "雙評比較", annual: "年度調整" }[t]!;
 }
 
 // ── Score Comparison tab ──────────────────────────────────────────────────
@@ -578,6 +579,131 @@ function BatchScoringTab() {
         </div>
       )}
 
+      {toast && <div className="toast show">{toast}</div>}
+    </div>
+  );
+}
+
+// ── Annual Adjust tab ─────────────────────────────────────────────────────
+
+function AnnualAdjustTab() {
+  const { data: settings } = useApi<Settings>(
+    () => api.get("/api/admin/settings").then((r) => r.data)
+  );
+  const defaultYear = (settings?.["當前季度"] ?? "").slice(0, 3);
+  const [year, setYear] = useState("");
+  const effectiveYear = year || defaultYear;
+
+  const { data, loading, error, refetch } = useApi<{ year: string; rows: AnnualAdjustRow[] }>(
+    () =>
+      effectiveYear
+        ? api.get(`/api/admin/annual-adjust?year=${encodeURIComponent(effectiveYear)}`).then((r) => r.data)
+        : Promise.resolve(null),
+    [effectiveYear]
+  );
+
+  const [edits, setEdits] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  }
+
+  async function handleSave(empName: string) {
+    const special = edits[empName] ?? 0;
+    setSaving(empName);
+    try {
+      await api.post("/api/admin/annual-adjust", { year: effectiveYear, empName, special });
+      showToast(`✅ ${empName} 年度調整已儲存`);
+      refetch();
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const rows: AnnualAdjustRow[] = data?.rows ?? [];
+
+  return (
+    <div className="admin-section">
+      <div className="section-header">
+        <h3>年度調整</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            placeholder={defaultYear || "年份，如 115"}
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            style={{ width: 80, padding: "6px 8px", fontSize: 13 }}
+          />
+          <button className="btn-secondary" onClick={refetch}
+            style={{ width: "auto", padding: "8px 12px", fontSize: 13 }}>
+            重新載入
+          </button>
+        </div>
+      </div>
+
+      {loading && <div className="loading"><div className="spinner" />載入中...</div>}
+      {error && <div className="error-page">{error}</div>}
+      {!loading && !error && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="comparison-table">
+            <thead>
+              <tr>
+                <th>員工</th>
+                <th>已完成季數</th>
+                <th>年度平均分</th>
+                <th>HR 加減分</th>
+                <th>最終年度分</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: "center", color: "#999", padding: 20 }}>尚無資料</td></tr>
+              ) : rows.map((row) => {
+                const displaySpecial = edits[row.empName] ?? row.annualSpecial;
+                const displayFinal = row.annualAvg + displaySpecial;
+                const isDirty = row.empName in edits;
+                return (
+                  <tr key={row.empName}>
+                    <td style={tdStyle}>{row.empName}</td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>{row.completedCount} / 4</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>{row.annualAvg.toFixed(2)}</td>
+                    <td style={tdStyle}>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min={-20}
+                        max={20}
+                        value={displaySpecial}
+                        onChange={(e) => setEdits((prev) => ({ ...prev, [row.empName]: Number(e.target.value) }))}
+                        style={{ width: 70, padding: "3px 6px", fontSize: 13, textAlign: "right" }}
+                      />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "right", fontWeight: isDirty ? 600 : 400 }}>
+                      {displayFinal.toFixed(2)}
+                    </td>
+                    <td style={tdStyle}>
+                      <button
+                        className="btn-primary"
+                        onClick={() => handleSave(row.empName)}
+                        disabled={saving === row.empName || !isDirty}
+                        style={{ width: "auto", padding: "4px 12px", fontSize: 12 }}
+                      >
+                        {saving === row.empName ? "儲存中…" : "儲存"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {toast && <div className="toast show">{toast}</div>}
     </div>
   );

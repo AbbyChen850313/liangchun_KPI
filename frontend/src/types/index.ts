@@ -195,3 +195,13 @@ export interface BatchSubmitResult {
   submitted: number;
   failed: Array<{ empName: string; error: string }>;
 }
+
+// ── Annual HR adjustment ───────────────────────────────────────────────────
+
+export interface AnnualAdjustRow {
+  empName: string;
+  annualAvg: number;
+  completedCount: number;
+  annualSpecial: number;
+  finalAnnualScore: number;
+}
