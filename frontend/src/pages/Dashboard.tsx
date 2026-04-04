@@ -46,14 +46,31 @@ export default function Dashboard() {
   // ── Employee (同仁) view ──────────────────────────────────────────────────
   if ("isEmployee" in data) {
     const emp = data as EmployeeDashboard;
+    const statusBadgeClass: Record<typeof emp.selfScoreStatus, string> = {
+      "已送出": "badge-done",
+      "草稿": "badge-draft",
+      "未填寫": "badge-pending",
+    };
     return (
       <div className="page">
         <Header title="考核評分系統" subtitle={`${emp.quarter} 自評`} />
+        <div className="info-bar" style={{ margin: "0 0 16px" }}>
+          <div className="info-row">
+            <span className="info-label">員工</span>
+            <span className="info-value">{emp.empName}</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">自評狀態</span>
+            <span className={`emp-badge ${statusBadgeClass[emp.selfScoreStatus]}`}>
+              {emp.selfScoreStatus}
+            </span>
+          </div>
+        </div>
         <div className="center-action">
           <button className="btn-primary" onClick={() => navigate("/self-score")}>
-            📝 填寫自評
+            📝 {emp.selfScoreStatus === "已送出" ? "查看自評" : "填寫自評"}
           </button>
-          <button className="btn-primary" onClick={() => navigate("/diary")} style={{ marginTop: 8 }}>
+          <button className="btn-secondary" onClick={() => navigate("/diary")} style={{ marginTop: 8 }}>
             📓 工作日誌
           </button>
         </div>

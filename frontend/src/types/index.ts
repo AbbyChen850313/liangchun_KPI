@@ -126,8 +126,9 @@ export interface HRDashboard {
 
 export interface EmployeeDashboard {
   isEmployee: true;
-  name: string;
+  empName: string;
   quarter: string;
+  selfScoreStatus: "草稿" | "已送出" | "未填寫";
   settings: Record<string, string>;
 }
 

@@ -61,12 +61,16 @@ def get_dashboard():
         })
 
     if role == "同仁":
+        emp_name: str = session["name"]
         settings = sheets.get_settings()
         quarter = settings.get("當前季度") or current_quarter()
+        self_record = sheets.get_self_score(quarter, emp_name)
+        self_score_status = self_record.get("status") if self_record else "未填寫"
         return jsonify({
             "isEmployee": True,
-            "name": session["name"],
+            "empName": emp_name,
             "quarter": quarter,
+            "selfScoreStatus": self_score_status,
             "settings": settings,
         })
 

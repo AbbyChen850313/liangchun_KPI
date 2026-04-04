@@ -488,6 +488,11 @@ def draft_self_score():
         settings = sheets.get_settings()
         quarter = settings.get("當前季度") or current_quarter()
 
+    # [P1] Prevent overwriting a submitted self-score with a draft
+    existing = sheets.get_self_score(quarter, emp_name)
+    if existing and existing.get("status") == "已送出":
+        return jsonify({"error": "自評已送出，無法修改"}), 409
+
     all_employees = sheets.get_all_employees()
     emp = next((e for e in all_employees if e["name"] == emp_name), None)
     section = emp["section"] if emp else ""
@@ -522,6 +527,11 @@ def submit_self_score():
     if not quarter:
         settings = sheets.get_settings()
         quarter = settings.get("當前季度") or current_quarter()
+
+    # [P1] Prevent duplicate self-score submission
+    existing = sheets.get_self_score(quarter, emp_name)
+    if existing and existing.get("status") == "已送出":
+        return jsonify({"error": "自評已送出，無法重複提交"}), 409
 
     all_employees = sheets.get_all_employees()
     emp = next((e for e in all_employees if e["name"] == emp_name), None)
