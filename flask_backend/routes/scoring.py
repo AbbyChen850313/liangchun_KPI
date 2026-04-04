@@ -10,7 +10,7 @@ import re
 
 from flask import Blueprint, g, jsonify, request
 
-from services.auth_service import require_auth, require_manager
+from services.auth_service import require_auth, require_hr, require_manager
 from services.scoring_service import (
     aggregate_annual_scores,
     annual_quarters,
@@ -173,15 +173,12 @@ def get_my_scores():
 # ── GET /api/scoring/all-status ────────────────────────────────────────────
 
 @scoring_bp.route("/all-status", methods=["GET"])
-@require_auth
+@require_hr
 def get_all_status():
     """
     Return scoring progress for all managers (HR / SysAdmin only).
     """
     session = g.session
-    if session.get("role") not in ("HR", "系統管理員"):
-        return jsonify({"error": "無 HR 權限"}), 403
-
     is_test: bool = session.get("isTest", False)
     sheets = _sheets(is_test)
     settings = sheets.get_settings()

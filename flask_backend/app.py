@@ -77,6 +77,15 @@ def create_app() -> Flask:
         logging.getLogger(__name__).exception("Unhandled error")
         return jsonify({"error": "伺服器內部錯誤，請稍後再試"}), 500
 
+    # ── Security headers ───────────────────────────────────────────────────
+    @app.after_request
+    def add_security_headers(response):
+        response.headers.setdefault(
+            "Content-Security-Policy", "default-src 'self'"
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        return response
+
     return app
 
 

@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 _secrets_cache: dict[str, str] = {}
 
+# Cloud Run sets K_SERVICE; absence means local development
+IS_PRODUCTION: bool = os.environ.get("K_SERVICE") is not None
+
 
 def _get_secret(name: str) -> str:
     """Return secret value; env var takes precedence over Secret Manager."""
@@ -58,15 +61,20 @@ LIFF_ID_TEST: str = os.environ.get("LIFF_ID_TEST", "2009619528-aJO34c6u")
 LINE_LOGIN_CHANNEL_ID: str = LIFF_ID.split("-")[0]
 LINE_LOGIN_CHANNEL_ID_TEST: str = LIFF_ID_TEST.split("-")[0]
 
-# Allowed CORS origins
-ALLOWED_ORIGINS: list[str] = [
+# Allowed CORS origins — localhost only permitted outside production (Cloud Run)
+_PRODUCTION_ORIGINS: list[str] = [
     "https://linchun-hr.web.app",
     "https://linchun-hr.firebaseapp.com",
     "https://linchun-hr-test.web.app",
     "https://linchun-hr-test.firebaseapp.com",
+]
+_DEVELOPMENT_ORIGINS: list[str] = [
     "http://localhost:5173",
     "http://localhost:3000",
 ]
+ALLOWED_ORIGINS: list[str] = (
+    _PRODUCTION_ORIGINS if IS_PRODUCTION else _PRODUCTION_ORIGINS + _DEVELOPMENT_ORIGINS
+)
 
 
 # ── Secret accessors ────────────────────────────────────────────────────────
@@ -94,4 +102,8 @@ def gcp_sa_info() -> dict:
 
 
 def jwt_secret() -> str:
-    return _get_secret("JWT_SECRET")
+    secret = _get_secret("JWT_SECRET")
+    assert len(secret) >= 32, (
+        "JWT_SECRET must be at least 32 characters for HS256 security."
+    )
+    return secret

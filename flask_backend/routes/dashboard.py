@@ -88,6 +88,8 @@ def get_manager_dashboard():
     account, _ = sheets.find_account_by_uid(target_uid)
     if not account:
         return jsonify({"error": "找不到該帳號"}), 404
+    if account.get("role") not in ("主管", "系統管理員"):
+        return jsonify({"error": "此帳號非主管角色，無法查看主管儀表板"}), 403
 
     return jsonify(
         _build_manager_dashboard(target_uid, account["name"], is_test, sheets)

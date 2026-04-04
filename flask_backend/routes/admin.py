@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 
 from flask import Blueprint, g, jsonify, request, make_response
 
@@ -220,6 +221,10 @@ def export_scores_csv():
         return jsonify({"error": "必須提供 quarter 參數"}), 400
 
     scores = _sheets(is_test).get_all_scores(quarter)
+    logger.info(
+        "AUDIT | route=export_scores_csv | actor=%s(%s) | action=export_csv | quarter=%s | count=%d",
+        g.session["name"], g.session["lineUid"], quarter, len(scores),
+    )
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
@@ -262,6 +267,8 @@ def export_annual_scores_csv():
     year = request.args.get("year", "").strip()
     if not year:
         return jsonify({"error": "必須提供 year 參數（民國年，如 115）"}), 400
+    if not re.match(r"^\d{3}$", year) or not (100 <= int(year) <= 200):
+        return jsonify({"error": "year 格式錯誤，請使用民國三位數年份（如 115）"}), 400
 
     sheets = _sheets(is_test)
     quarters = annual_quarters(int(year))
@@ -280,6 +287,10 @@ def export_annual_scores_csv():
             emp_map[emp][s["quarter"]] = s.get("weightedScore")
 
     summary = aggregate_annual_scores(emp_map)
+    logger.info(
+        "AUDIT | route=export_annual_scores_csv | actor=%s(%s) | action=export_annual_csv | year=%s | employees=%d",
+        g.session["name"], g.session["lineUid"], year, len(summary),
+    )
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(

@@ -26,7 +26,7 @@ export default function Dashboard() {
     () => api.get("/api/dashboard").then((r) => r.data)
   );
 
-  const { data: viewAsData, loading: viewAsLoading, error: viewAsError, refetch: refetchViewAs } =
+  const { data: viewAsData, loading: viewAsLoading, error: viewAsError } =
     useApi<DashboardData | null>(
       () =>
         viewAsUid
