@@ -292,6 +292,33 @@ def reset_account():
     return jsonify({"success": True})
 
 
+# ── GET /api/auth/bind-check ──────────────────────────────────────────────
+
+@auth_bp.route("/bind-check", methods=["GET"])
+@limiter.limit("20/minute")
+def bind_check():
+    """
+    Check whether the LINE display name (from bind token) exists in the employee list.
+    Used by Bind.tsx on mount to decide initial step: skip verify-code for known employees.
+
+    Query: { "bindToken": str, "isTest": bool }
+    Response: { "inEmployeeList": bool }
+    """
+    bind_token_str = (request.args.get("bindToken") or "").strip()
+    is_test = request.args.get("isTest", "false").lower() == "true"
+
+    if not bind_token_str:
+        return jsonify({"error": "缺少 bindToken"}), 400
+
+    payload = decode_bind_token(bind_token_str)
+    if not payload:
+        return jsonify({"error": "bindToken 無效或已過期"}), 401
+
+    display_name: str = payload.get("displayName", "")
+    in_employee_list = _sheets(is_test).check_name_in_employees(display_name)
+    return jsonify({"inEmployeeList": in_employee_list})
+
+
 # ── POST /api/auth/verify-code ─────────────────────────────────────────────
 
 @auth_bp.route("/verify-code", methods=["POST"])

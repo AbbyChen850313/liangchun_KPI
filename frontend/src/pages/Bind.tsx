@@ -3,7 +3,7 @@
  * Flow: verify bind code → enter name + employeeId → bind via LIFF access token
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { liffAdapter } from "../adapters/liff";
 import { api } from "../services/api";
 
@@ -19,6 +19,24 @@ export default function Bind() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successName, setSuccessName] = useState("");
+
+  // On mount: if a bind token exists, check whether this LINE display name is
+  // already in the employee list — if so, skip the verify-code step.
+  useEffect(() => {
+    const storedToken = sessionStorage.getItem("line_bind_token");
+    if (!storedToken) return;
+
+    api
+      .get("/api/auth/bind-check", {
+        params: { bindToken: storedToken, isTest: IS_TEST },
+      })
+      .then(({ data }) => {
+        if (data.inEmployeeList) setStep("identity");
+      })
+      .catch(() => {
+        // On error keep the default "code" step
+      });
+  }, []);
 
   async function handleVerifyCode() {
     setError("");

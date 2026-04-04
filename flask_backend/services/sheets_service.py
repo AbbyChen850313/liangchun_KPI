@@ -299,6 +299,10 @@ class SheetsService:
             if _safe(row, 1)  # must have a name
         ]
 
+    def check_name_in_employees(self, display_name: str) -> bool:
+        """Return True if display_name matches any employee name in 員工資料."""
+        return any(emp["name"] == display_name for emp in self.get_all_employees())
+
     def sync_employees_from_hr(self) -> int:
         """Copy eligible employees from HR Sheet → 員工資料 sheet. Returns count."""
         HR_COL = {
