@@ -5,6 +5,7 @@ import Bind from "./pages/Bind";
 import Dashboard from "./pages/Dashboard";
 import Score from "./pages/Score";
 import SeasonScore from "./pages/SeasonScore";
+import SelfScore from "./pages/SelfScore";
 import SysAdmin from "./pages/SysAdmin";
 import WorkDiary from "./pages/WorkDiary";
 import "./styles.css";
@@ -43,6 +44,7 @@ function AuthenticatedRoutes() {
     <Routes>
       <Route path="/" element={<Dashboard />} />
       <Route path="/score" element={<Score />} />
+      <Route path="/self-score" element={<SelfScore />} />
       <Route path="/season-score" element={<SeasonScore />} />
       <Route path="/admin" element={<Admin />} />
       <Route path="/sysadmin" element={<SysAdmin />} />

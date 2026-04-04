@@ -13,6 +13,7 @@ import type {
   DashboardData,
   DiffAlert,
   Employee,
+  EmployeeDashboard,
   SysAdminDashboard,
 } from "../types";
 
@@ -41,6 +42,24 @@ export default function Dashboard() {
   if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
   if (error) return <div className="error-page">{error}</div>;
   if (!data) return null;
+
+  // ── Employee (同仁) view ──────────────────────────────────────────────────
+  if ("isEmployee" in data) {
+    const emp = data as EmployeeDashboard;
+    return (
+      <div className="page">
+        <Header title="考核評分系統" subtitle={`${emp.quarter} 自評`} />
+        <div className="center-action">
+          <button className="btn-primary" onClick={() => navigate("/self-score")}>
+            📝 填寫自評
+          </button>
+          <button className="btn-primary" onClick={() => navigate("/diary")} style={{ marginTop: 8 }}>
+            📓 工作日誌
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── HR view ───────────────────────────────────────────────────────────────
   if ("isHR" in data) {

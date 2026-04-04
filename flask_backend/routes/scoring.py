@@ -465,6 +465,37 @@ def get_score_items():
     return jsonify(items)
 
 
+# ── POST /api/scoring/self-draft ───────────────────────────────────────────
+
+@scoring_bp.route("/self-draft", methods=["POST"])
+@require_auth
+def draft_self_score():
+    """Employee saves a draft self-assessment (partial items allowed)."""
+    session = g.session
+    emp_name: str = session["name"]
+    is_test: bool = session.get("isTest", False)
+
+    body = request.get_json(silent=True) or {}
+    scores_raw: dict = body.get("scores") or {}
+    note = (body.get("note") or "").strip()
+    quarter = (body.get("quarter") or "").strip()
+
+    if len(note) > 500:
+        return jsonify({"error": "備註不可超過 500 字"}), 400
+
+    sheets = _sheets(is_test)
+    if not quarter:
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or current_quarter()
+
+    all_employees = sheets.get_all_employees()
+    emp = next((e for e in all_employees if e["name"] == emp_name), None)
+    section = emp["section"] if emp else ""
+
+    raw_score = sheets.upsert_self_score(quarter, emp_name, section, scores_raw, note, status="草稿")
+    return jsonify({"success": True, "rawScore": raw_score})
+
+
 # ── POST /api/scoring/self-submit ──────────────────────────────────────────
 
 @scoring_bp.route("/self-submit", methods=["POST"])
@@ -524,4 +555,5 @@ def get_my_self_score():
         "rawScore": record["rawScore"],
         "note": record["note"],
         "quarter": quarter,
+        "status": record.get("status", "已送出"),
     })

@@ -60,6 +60,16 @@ def get_dashboard():
             "settings": settings,
         })
 
+    if role == "同仁":
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or current_quarter()
+        return jsonify({
+            "isEmployee": True,
+            "name": session["name"],
+            "quarter": quarter,
+            "settings": settings,
+        })
+
     # ── Manager view ───────────────────────────────────────────────────────
     return jsonify(_build_manager_dashboard(line_uid, session["name"], is_test, sheets))
 

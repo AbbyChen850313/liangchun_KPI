@@ -55,6 +55,7 @@ export interface SelfScoreRecord {
   rawScore: number;
   note: string;
   quarter: string;
+  status: "草稿" | "已送出";
 }
 
 export interface ScoreComparisonRow {
@@ -123,7 +124,14 @@ export interface HRDashboard {
   isHR: true;
 }
 
-export type AnyDashboard = DashboardData | SysAdminDashboard | HRDashboard;
+export interface EmployeeDashboard {
+  isEmployee: true;
+  name: string;
+  quarter: string;
+  settings: Record<string, string>;
+}
+
+export type AnyDashboard = DashboardData | SysAdminDashboard | HRDashboard | EmployeeDashboard;
 
 // ── Account ───────────────────────────────────────────────────────────────
 

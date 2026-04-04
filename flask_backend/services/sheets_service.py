@@ -539,7 +539,8 @@ class SheetsService:
         ]
 
     def upsert_self_score(
-        self, quarter: str, emp_name: str, section: str, scores: dict, note: str
+        self, quarter: str, emp_name: str, section: str, scores: dict, note: str,
+        status: str = "已送出",
     ) -> float:
         """Save or overwrite an employee's self-assessment. Returns rawScore."""
         from services.scoring_service import calc_all as _calc_all
@@ -557,7 +558,7 @@ class SheetsService:
             "rawScore": calc["rawScore"],
             "finalScore": calc["finalScore"],
             "weightedScore": 0,
-            "status": "已送出",
+            "status": status,
         })
         ws = self.worksheet("評分記錄")
         rows = _cached_rows(ws, self.is_test, "評分記錄")
