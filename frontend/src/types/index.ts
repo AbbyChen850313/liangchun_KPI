@@ -196,6 +196,18 @@ export interface BatchSubmitResult {
   failed: Array<{ empName: string; error: string }>;
 }
 
+// ── Work diary ────────────────────────────────────────────────────────────
+
+export interface WorkLog {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  date: string;  // YYYY-MM-DD
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── Annual HR adjustment ───────────────────────────────────────────────────
 
 export interface AnnualAdjustRow {

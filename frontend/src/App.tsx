@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Score from "./pages/Score";
 import SeasonScore from "./pages/SeasonScore";
 import SysAdmin from "./pages/SysAdmin";
+import WorkDiary from "./pages/WorkDiary";
 import "./styles.css";
 
 /** Routes that require LINE authentication */
@@ -45,6 +46,7 @@ function AuthenticatedRoutes() {
       <Route path="/season-score" element={<SeasonScore />} />
       <Route path="/admin" element={<Admin />} />
       <Route path="/sysadmin" element={<SysAdmin />} />
+      <Route path="/diary" element={<WorkDiary />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

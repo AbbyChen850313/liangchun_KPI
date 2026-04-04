@@ -39,11 +39,13 @@ def create_app() -> Flask:
     from routes.dashboard import dashboard_bp
     from routes.scoring import scoring_bp
     from routes.admin import admin_bp
+    from routes.diary import diary_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(dashboard_bp, url_prefix="/api")
     app.register_blueprint(scoring_bp, url_prefix="/api/scoring")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(diary_bp, url_prefix="/api/diary")
 
     # ── Health check ───────────────────────────────────────────────────────
     @app.route("/health")

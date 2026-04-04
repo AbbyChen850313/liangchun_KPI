@@ -51,6 +51,9 @@ export default function Dashboard() {
           <button className="btn-primary" onClick={() => navigate("/admin")}>
             ⚙️ 進入 HR 管理後台
           </button>
+          <button className="btn-primary" onClick={() => navigate("/diary")} style={{ marginTop: 8 }}>
+            📓 查看員工工作日誌
+          </button>
         </div>
       </div>
     );
@@ -229,6 +232,12 @@ function ManagerView({
           onClick={() => navigate("/season-score")}
         >
           四季評分
+        </button>
+        <button
+          className="filter-btn"
+          onClick={() => navigate("/diary")}
+        >
+          工作日誌
         </button>
       </div>
 

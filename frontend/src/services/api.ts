@@ -8,6 +8,7 @@ import type {
   AnnualSummaryResponse,
   QuarterEmployee,
   SeasonScoreStatus,
+  WorkLog,
 } from "../types";
 import { refreshRole, SESSION_KEY } from "./authRefresh";
 import { liffAdapter } from "../adapters/liff";
@@ -84,6 +85,33 @@ export interface QuarterEmployeesResponse {
 export async function apiGetQuarterEmployees(quarter: string): Promise<QuarterEmployeesResponse> {
   const res = await api.get<QuarterEmployeesResponse>(
     `/api/scoring/quarter-employees?quarter=${encodeURIComponent(quarter)}`
+  );
+  return res.data;
+}
+
+// ── Work diary ────────────────────────────────────────────────────────────
+
+export async function apiGetMyLogs(): Promise<WorkLog[]> {
+  const res = await api.get<{ logs: WorkLog[] }>("/api/diary/my-logs");
+  return res.data.logs;
+}
+
+export async function apiCreateLog(date: string, content: string): Promise<{ id: string }> {
+  const res = await api.post<{ id: string }>("/api/diary/log", { date, content });
+  return res.data;
+}
+
+export async function apiUpdateLog(logId: string, date: string, content: string): Promise<void> {
+  await api.put(`/api/diary/log/${encodeURIComponent(logId)}`, { date, content });
+}
+
+export async function apiDeleteLog(logId: string): Promise<void> {
+  await api.delete(`/api/diary/log/${encodeURIComponent(logId)}`);
+}
+
+export async function apiGetEmployeeLogs(empName: string): Promise<{ logs: WorkLog[]; empName: string }> {
+  const res = await api.get<{ logs: WorkLog[]; empName: string }>(
+    `/api/diary/employee-logs?name=${encodeURIComponent(empName)}`
   );
   return res.data;
 }
