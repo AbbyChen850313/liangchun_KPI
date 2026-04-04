@@ -36,6 +36,17 @@ def _csv_safe(value) -> str:
     return s
 
 
+def _annual_grade(score: float) -> str:
+    """Map final annual score to grade label per CLAUDE.md: 甲≥90, 乙≥75, 丙≥60, 丁<60."""
+    if score >= 90:
+        return "甲"
+    if score >= 75:
+        return "乙"
+    if score >= 60:
+        return "丙"
+    return "丁"
+
+
 def _sheets(is_test: bool) -> SheetsService:
     return SheetsService(is_test=is_test)
 
@@ -343,6 +354,10 @@ def export_annual_scores_csv():
             emp_map[emp][s["quarter"]] = s.get("weightedScore")
 
     summary = aggregate_annual_scores(emp_map)
+    adj_map: dict[str, float] = {
+        a["empName"]: a["special"]
+        for a in sheets.get_annual_adjustments(year)
+    }
     logger.info(
         "AUDIT | route=export_annual_scores_csv | actor=%s(%s) | action=export_annual_csv | year=%s | employees=%d",
         g.session["name"], g.session["lineUid"], year, len(summary),
@@ -356,14 +371,19 @@ def export_annual_scores_csv():
     writer.writerow(
         ["員工", "主管", "科別"]
         + [f"{q}加權分" for q in quarters]
-        + ["全年加總", "已完成季度數"]
+        + ["四季平均", "已完成季度數", "HR年度調整", "最終年度總分", "等級"]
     )
     for emp, data in sorted(summary.items()):
         row = [_csv_safe(emp), _csv_safe(emp_manager.get(emp, "")), _csv_safe(emp_section.get(emp, ""))]
         for q in quarters:
             v = data["quarters"].get(q)
             row.append(v if v is not None else "未評分")
-        row += [data["annualTotal"], data["completedCount"]]
+        completed_count: int = data["completedCount"]
+        annual_avg = round(data["annualTotal"] / completed_count, 2) if completed_count > 0 else 0.0
+        annual_special = adj_map.get(emp, 0.0)
+        final_annual_score = round(annual_avg + annual_special, 2)
+        grade = _annual_grade(final_annual_score) if completed_count > 0 else "未完成"
+        row += [annual_avg, completed_count, annual_special, final_annual_score, grade]
         writer.writerow(row)
 
     csv_bytes = output.getvalue().encode("utf-8-sig")
