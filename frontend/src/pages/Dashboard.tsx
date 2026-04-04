@@ -11,6 +11,7 @@ import type {
   AnnualSummaryResponse,
   AnyDashboard,
   DashboardData,
+  DiffAlert,
   Employee,
   SysAdminDashboard,
 } from "../types";
@@ -106,6 +107,9 @@ export default function Dashboard() {
     <div className="page">
       <Header title="考核評分系統" subtitle={`${managerData.quarter} 考核評分`} />
       <InfoBar data={managerData} />
+      {managerData.diffAlerts.length > 0 && (
+        <DiffAlertBanner alerts={managerData.diffAlerts} />
+      )}
       <ManagerView data={managerData} filter={filter} setFilter={setFilter} navigate={navigate} />
     </div>
   );
@@ -326,6 +330,19 @@ function EmployeeCard({
         </div>
       </div>
       <span className={`emp-badge ${badgeClass}`}>{emp.scoreStatus}</span>
+    </div>
+  );
+}
+
+function DiffAlertBanner({ alerts }: { alerts: DiffAlert[] }) {
+  return (
+    <div className="deadline-warning" style={{ margin: "0 0 12px" }}>
+      ⚠️ {alerts.length} 筆自評 vs 主管差異 ≥ 15 分：
+      {alerts.map((a) => (
+        <span key={a.empName} style={{ marginLeft: 8 }}>
+          {a.empName}（差 {a.diff > 0 ? "+" : ""}{a.diff.toFixed(1)}）
+        </span>
+      ))}
     </div>
   );
 }

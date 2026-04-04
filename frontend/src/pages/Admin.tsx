@@ -332,6 +332,8 @@ function ScoreComparisonTab() {
 
   const rows: ScoreComparisonRow[] = data?.rows ?? [];
   const flaggedCount = rows.filter((r) => r.flagged).length;
+  const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
+  const displayRows = showFlaggedOnly ? rows.filter((r) => r.flagged) : rows;
 
   return (
     <div className="admin-section">
@@ -348,6 +350,13 @@ function ScoreComparisonTab() {
           <button className="btn-secondary" onClick={refetch}
             style={{ width: "auto", padding: "8px 12px", fontSize: 13 }}>
             重新載入
+          </button>
+          <button
+            className={`btn-secondary${showFlaggedOnly ? " active" : ""}`}
+            onClick={() => setShowFlaggedOnly((v) => !v)}
+            style={{ width: "auto", padding: "8px 12px", fontSize: 13 }}
+          >
+            {showFlaggedOnly ? "顯示全部" : "僅看差異"}
           </button>
         </div>
       </div>
@@ -374,9 +383,9 @@ function ScoreComparisonTab() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {displayRows.length === 0 ? (
                 <tr><td colSpan={6} style={{ textAlign: "center", color: "#999", padding: 20 }}>尚無資料</td></tr>
-              ) : rows.map((row) => (
+              ) : displayRows.map((row) => (
                 <tr key={`${row.managerName}|${row.empName}`} className={row.flagged ? "flagged" : ""}>
                   <td>{row.empName}</td>
                   <td>{row.section}</td>

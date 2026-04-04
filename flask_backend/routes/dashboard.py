@@ -122,6 +122,7 @@ def _build_manager_dashboard(
             "pending": 0,
             "employees": [],
             "myScores": {},
+            "diffAlerts": [],
             "settings": settings,
         }
 
@@ -183,6 +184,26 @@ def _build_manager_dashboard(
         for s in existing_scores
     }
 
+    # Build diffAlerts: submitted manager scores where |manager - self| >= 15
+    self_scores_quarter = sheets.get_all_self_scores(quarter)
+    self_raw_map: dict[str, float] = {s["empName"]: s["rawScore"] for s in self_scores_quarter}
+
+    diff_alerts = []
+    for s in existing_scores:
+        if s["status"] != "已送出":
+            continue
+        self_raw = self_raw_map.get(s["empName"])
+        if self_raw is None:
+            continue
+        diff = round(s["rawScore"] - self_raw, 2)
+        if abs(diff) >= 15:
+            diff_alerts.append({
+                "empName": s["empName"],
+                "selfRawScore": self_raw,
+                "managerRawScore": s["rawScore"],
+                "diff": diff,
+            })
+
     return {
         "quarter": quarter,
         "quarterDescription": quarter_to_description(quarter),
@@ -193,5 +214,6 @@ def _build_manager_dashboard(
         "pending": pending,
         "employees": employees_out,
         "myScores": my_scores,
+        "diffAlerts": diff_alerts,
         "settings": settings,
     }

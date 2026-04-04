@@ -67,6 +67,13 @@ export interface ScoreComparisonRow {
   flagged: boolean;
 }
 
+export interface DiffAlert {
+  empName: string;
+  selfRawScore: number;
+  managerRawScore: number;
+  diff: number;
+}
+
 export interface ScoreResult {
   success: boolean;
   status: string;
@@ -101,6 +108,7 @@ export interface DashboardData {
   pending: number;
   employees: Employee[];
   myScores: Record<string, ScoreRecord>;
+  diffAlerts: DiffAlert[];
   settings: Record<string, string>;
 }
 
