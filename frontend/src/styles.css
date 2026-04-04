@@ -371,3 +371,64 @@ body {
   color: #333;
 }
 .history-chip.current .history-chip-score { color: #1565c0; }
+
+/* ── Self-score panel (manager Score page) ─────────────────────────── */
+.self-score-panel {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: #fff8e1;
+  border-radius: 8px;
+  border: 1px solid #ffe082;
+}
+.self-score-panel-title {
+  font-size: 11px;
+  color: #f57f17;
+  font-weight: 600;
+  letter-spacing: .4px;
+  margin-bottom: 8px;
+}
+.self-score-items { display: flex; flex-direction: column; gap: 4px; }
+.self-score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+.self-score-item-name { color: #555; }
+.self-grade-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc02;
+}
+.self-score-avg {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #7c5a00;
+  text-align: right;
+}
+
+/* ── Score comparison table (HR Admin) ────────────────────────────── */
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.comparison-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 600;
+  background: #f5f5f5;
+  border-bottom: 2px solid #e0e0e0;
+}
+.comparison-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid #eee;
+}
+.comparison-table tr.flagged td { background: #fff3e0; }
+.flag-icon { color: #e65100; font-weight: 700; margin-left: 4px; }

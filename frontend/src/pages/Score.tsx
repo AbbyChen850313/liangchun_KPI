@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import { refreshRole } from "../services/authRefresh";
-import type { ScoreGrade, ScoreItem, ScoreItems } from "../types";
+import type { ScoreGrade, ScoreItem, ScoreItems, ScoreRecord } from "../types";
 
 const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
 const GRADE_SCORES: Record<ScoreGrade, number> = {
@@ -46,7 +46,7 @@ export default function Score() {
   );
 
   // Load existing scores for this employee (scoped to the correct quarter)
-  const { data: myScores } = useApi<Record<string, any>>(
+  const { data: myScores } = useApi<Record<string, ScoreRecord>>(
     () => api.get(`/api/scoring/my-scores${quarter ? `?quarter=${encodeURIComponent(quarter)}` : ""}`).then((r) => r.data),
     [quarter]
   );
@@ -150,6 +150,27 @@ export default function Score() {
                   </span>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {myScores?.[empName]?.selfScores && (
+          <div className="self-score-panel">
+            <div className="self-score-panel-title">員工自評</div>
+            <div className="self-score-items">
+              {scoreItems?.map((item, idx) => {
+                const key = `item${idx + 1}` as keyof ScoreItems;
+                const grade = myScores[empName].selfScores![key];
+                return (
+                  <div key={item.code} className="self-score-row">
+                    <span className="self-score-item-name">{item.name}</span>
+                    <span className={`self-grade-chip grade-${grade}`}>{grade || "—"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="self-score-avg">
+              自評平均：<strong>{myScores[empName].selfRawScore?.toFixed(1) ?? "—"}</strong>
             </div>
           </div>
         )}

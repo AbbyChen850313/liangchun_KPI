@@ -495,6 +495,74 @@ class SheetsService:
         if year and manager:
             _invalidate_year_score(self.is_test, manager, year)
 
+    # ── Self-scores (自評記錄) — stored in 評分記錄 with managerName = "【自評】{empName}" ──
+
+    _SELF_SCORE_PREFIX = "【自評】"
+
+    def get_self_score(self, quarter: str, emp_name: str) -> dict | None:
+        """Return the self-assessment record for an employee in a quarter, or None."""
+        ws = self.worksheet("評分記錄")
+        rows = _cached_rows(ws, self.is_test, "評分記錄")
+        c = _COL_SCORE
+        sentinel = f"{self._SELF_SCORE_PREFIX}{emp_name}"
+        for row in rows[1:]:
+            if (
+                _safe(row, c["quarter"]) == quarter
+                and _safe(row, c["managerName"]) == sentinel
+            ):
+                return self._parse_score_row(row)
+        return None
+
+    def get_all_self_scores(self, quarter: str) -> list[dict]:
+        """Return all self-assessment records for a quarter."""
+        ws = self.worksheet("評分記錄")
+        rows = _cached_rows(ws, self.is_test, "評分記錄")
+        c = _COL_SCORE
+        return [
+            self._parse_score_row(row)
+            for row in rows[1:]
+            if _safe(row, c["quarter"]) == quarter
+            and _safe(row, c["managerName"]).startswith(self._SELF_SCORE_PREFIX)
+        ]
+
+    def upsert_self_score(
+        self, quarter: str, emp_name: str, section: str, scores: dict, note: str
+    ) -> float:
+        """Save or overwrite an employee's self-assessment. Returns rawScore."""
+        from services.scoring_service import calc_all as _calc_all
+        sentinel = f"{self._SELF_SCORE_PREFIX}{emp_name}"
+        calc = _calc_all(scores, 0, 0)
+        score_row = self._score_to_row({
+            "quarter": quarter,
+            "managerName": sentinel,
+            "empName": emp_name,
+            "section": section,
+            "weight": 0,
+            "scores": scores,
+            "special": 0,
+            "note": note,
+            "rawScore": calc["rawScore"],
+            "finalScore": calc["finalScore"],
+            "weightedScore": 0,
+            "status": "已送出",
+        })
+        ws = self.worksheet("評分記錄")
+        rows = _cached_rows(ws, self.is_test, "評分記錄")
+        c = _COL_SCORE
+        for i, row in enumerate(rows[1:], start=2):
+            if (
+                _safe(row, c["quarter"]) == quarter
+                and _safe(row, c["managerName"]) == sentinel
+            ):
+                _with_retry(lambda i=i, score_row=score_row: ws.update(
+                    f"A{i}:R{i}", [score_row], value_input_option="USER_ENTERED"
+                ))
+                _invalidate(self.is_test, "評分記錄")
+                return calc["rawScore"]
+        _with_retry(lambda: ws.append_row(score_row, value_input_option="USER_ENTERED"))
+        _invalidate(self.is_test, "評分記錄")
+        return calc["rawScore"]
+
     def reset_scores_for_employees(self, quarter: str, emp_names: list[str]) -> int:
         """Delete scoring rows for specified employees in a given quarter."""
         ws = self.worksheet("評分記錄")

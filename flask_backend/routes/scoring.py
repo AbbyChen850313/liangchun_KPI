@@ -141,15 +141,16 @@ def _upsert_score(status: str):
         )
         write_audit_log(
             actor_name=manager_name, actor_uid=line_uid,
-            action="submit_score",
+            action="manager_submit",
             details={
                 "quarter": quarter,
                 "empName": emp_name,
                 "section": section,
+                "scores": scores_raw,
                 "rawScore": score_data["rawScore"],
             },
             is_test=is_test,
-        )  # [P1-AUDIT-04]
+        )  # [P0-AUDIT-01]
 
     return jsonify({
         "success": True,
@@ -177,15 +178,23 @@ def get_my_scores():
         quarter = settings.get("當前季度") or current_quarter()
 
     scores = sheets.get_scores_by_manager(quarter, manager_name)
-    result = {
-        s["empName"]: {
+    # Build lookup: empName → self-assessment record (fetched once, cached)
+    self_score_map = {
+        s["empName"]: s
+        for s in sheets.get_all_self_scores(quarter)
+    }
+    result = {}
+    for s in scores:
+        emp_name = s["empName"]
+        self_rec = self_score_map.get(emp_name)
+        result[emp_name] = {
             "scores": s["scores"],
             "special": s["special"],
             "note": s["note"],
             "status": s["status"],
+            "selfScores": self_rec["scores"] if self_rec else None,
+            "selfRawScore": self_rec["rawScore"] if self_rec else None,
         }
-        for s in scores
-    }
     return jsonify(result)
 
 
@@ -272,6 +281,10 @@ def get_annual_summary():
         settings = sheets.get_settings()
         quarter = settings.get("當前季度") or current_quarter()
         year = quarter[:3]
+    else:
+        year_int, err = _validated_year(year)
+        if err:
+            return err
 
     quarters = annual_quarters(int(year))
 
@@ -314,6 +327,10 @@ def get_season_status():
     if not year:
         settings = sheets.get_settings()
         year = (settings.get("當前季度") or current_quarter())[:3]
+    else:
+        year_int, err = _validated_year(year)
+        if err:
+            return err
 
     available_quarters = get_available_quarters(int(year))
 
@@ -421,6 +438,10 @@ def get_employee_history():
     if not year:
         settings = sheets.get_settings()
         year = (settings.get("當前季度") or current_quarter())[:3]
+    else:
+        year_int, err = _validated_year(year)
+        if err:
+            return err
 
     quarters = annual_quarters(int(year))
     all_scores = sheets.get_scores_by_manager_year(manager_name, year)
@@ -442,3 +463,65 @@ def get_score_items():
     is_test: bool = g.session.get("isTest", False)
     items = _sheets(is_test).get_score_items()
     return jsonify(items)
+
+
+# ── POST /api/scoring/self-submit ──────────────────────────────────────────
+
+@scoring_bp.route("/self-submit", methods=["POST"])
+@require_auth
+def submit_self_score():
+    """Employee (同仁) submits their own self-assessment for the current quarter."""
+    session = g.session
+    emp_name: str = session["name"]
+    is_test: bool = session.get("isTest", False)
+
+    body = request.get_json(silent=True) or {}
+    scores_raw: dict = body.get("scores") or {}
+    note = (body.get("note") or "").strip()
+    quarter = (body.get("quarter") or "").strip()
+
+    if len(note) > 500:
+        return jsonify({"error": "備註不可超過 500 字"}), 400
+
+    missing = [f"item{i}" for i in range(1, 7) if not scores_raw.get(f"item{i}")]
+    if missing:
+        return jsonify({"error": f"評分項目未填完：{', '.join(missing)}"}), 400
+
+    sheets = _sheets(is_test)
+    if not quarter:
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or current_quarter()
+
+    all_employees = sheets.get_all_employees()
+    emp = next((e for e in all_employees if e["name"] == emp_name), None)
+    section = emp["section"] if emp else ""
+
+    raw_score = sheets.upsert_self_score(quarter, emp_name, section, scores_raw, note)
+    return jsonify({"success": True, "rawScore": raw_score})
+
+
+# ── GET /api/scoring/my-self-score ─────────────────────────────────────────
+
+@scoring_bp.route("/my-self-score", methods=["GET"])
+@require_auth
+def get_my_self_score():
+    """Return the current user's self-assessment for a quarter."""
+    session = g.session
+    emp_name: str = session["name"]
+    is_test: bool = session.get("isTest", False)
+    quarter = request.args.get("quarter", "").strip()
+
+    sheets = _sheets(is_test)
+    if not quarter:
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or current_quarter()
+
+    record = sheets.get_self_score(quarter, emp_name)
+    if not record:
+        return jsonify(None)
+    return jsonify({
+        "scores": record["scores"],
+        "rawScore": record["rawScore"],
+        "note": record["note"],
+        "quarter": quarter,
+    })

@@ -46,6 +46,25 @@ export interface ScoreRecord {
   special: number;
   note: string;
   status: "草稿" | "已送出";
+  selfScores: ScoreItems | null;
+  selfRawScore: number | null;
+}
+
+export interface SelfScoreRecord {
+  scores: ScoreItems;
+  rawScore: number;
+  note: string;
+  quarter: string;
+}
+
+export interface ScoreComparisonRow {
+  empName: string;
+  section: string;
+  managerName: string;
+  managerRawScore: number;
+  selfRawScore: number | null;
+  diff: number | null;
+  flagged: boolean;
 }
 
 export interface ScoreResult {

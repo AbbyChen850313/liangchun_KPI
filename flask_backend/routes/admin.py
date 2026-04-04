@@ -373,3 +373,53 @@ def export_annual_scores_csv():
         f'attachment; filename="annual_{year}.csv"'
     )
     return resp
+
+
+# ── GET /api/admin/score-comparison ──────────────────────────────────────
+
+@admin_bp.route("/score-comparison", methods=["GET"])
+@require_hr
+def get_score_comparison():
+    """Return per-employee manager score vs self-score for a quarter (HR only).
+
+    Query param: quarter (e.g. 115Q1). Defaults to current quarter from settings.
+    Response: { quarter, rows: [{ empName, section, managerName, managerRawScore,
+                                   selfRawScore, diff, flagged }] }
+    flagged = True when |managerRawScore - selfRawScore| >= 15.
+    """
+    from services.scoring_service import current_quarter as _current_quarter
+    session = g.session
+    is_test: bool = session.get("isTest", False)
+    sheets = _sheets(is_test)
+    quarter = request.args.get("quarter", "").strip()
+    if not quarter:
+        settings = sheets.get_settings()
+        quarter = settings.get("當前季度") or _current_quarter()
+
+    submitted_manager_scores = [
+        s for s in sheets.get_all_scores(quarter)
+        if s["status"] == "已送出"
+        and not s["managerName"].startswith("【自評】")
+    ]
+    self_score_map: dict[str, dict] = {
+        s["empName"]: s for s in sheets.get_all_self_scores(quarter)
+    }
+
+    rows = []
+    for s in submitted_manager_scores:
+        emp_name = s["empName"]
+        self_rec = self_score_map.get(emp_name)
+        manager_raw: float = s["rawScore"]
+        self_raw: float | None = self_rec["rawScore"] if self_rec else None
+        diff = round(manager_raw - self_raw, 2) if self_raw is not None else None
+        rows.append({
+            "empName": emp_name,
+            "section": s["section"],
+            "managerName": s["managerName"],
+            "managerRawScore": manager_raw,
+            "selfRawScore": self_raw,
+            "diff": diff,
+            "flagged": diff is not None and abs(diff) >= 15,
+        })
+
+    return jsonify({"quarter": quarter, "rows": rows})

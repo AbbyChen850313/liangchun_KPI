@@ -7,9 +7,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
-import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult } from "../types";
+import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow } from "../types";
 
-type Tab = "progress" | "settings" | "employees" | "batch";
+type Tab = "progress" | "settings" | "employees" | "batch" | "comparison";
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Admin() {
       </div>
 
       <div className="tab-bar">
-        {(["progress", "settings", "employees", "batch"] as Tab[]).map((t) => (
+        {(["progress", "settings", "employees", "batch", "comparison"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`tab-btn${tab === t ? " active" : ""}`}
@@ -40,6 +40,7 @@ export default function Admin() {
       {tab === "settings" && <SettingsTab />}
       {tab === "employees" && <EmployeesTab />}
       {tab === "batch" && <BatchScoringTab />}
+      {tab === "comparison" && <ScoreComparisonTab />}
     </div>
   );
 }
@@ -309,7 +310,95 @@ function EmployeesTab() {
 }
 
 function tabLabel(t: Tab): string {
-  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分" }[t];
+  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分", comparison: "雙評比較" }[t]!;
+}
+
+// ── Score Comparison tab ──────────────────────────────────────────────────
+
+function ScoreComparisonTab() {
+  const { data: settings } = useApi<Settings>(
+    () => api.get("/api/admin/settings").then((r) => r.data)
+  );
+  const [quarter, setQuarter] = useState("");
+  const effectiveQuarter = quarter || settings?.["當前季度"] || "";
+
+  const { data, loading, error, refetch } = useApi<{ quarter: string; rows: ScoreComparisonRow[] }>(
+    () =>
+      effectiveQuarter
+        ? api.get(`/api/admin/score-comparison?quarter=${encodeURIComponent(effectiveQuarter)}`).then((r) => r.data)
+        : Promise.resolve(null),
+    [effectiveQuarter]
+  );
+
+  const rows: ScoreComparisonRow[] = data?.rows ?? [];
+  const flaggedCount = rows.filter((r) => r.flagged).length;
+
+  return (
+    <div className="admin-section">
+      <div className="section-header">
+        <h3>自評 vs 主管評分比較</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            placeholder={settings?.["當前季度"] ?? "季度，如 115Q1"}
+            value={quarter}
+            onChange={(e) => setQuarter(e.target.value)}
+            style={{ width: 100, padding: "6px 8px", fontSize: 13 }}
+          />
+          <button className="btn-secondary" onClick={refetch}
+            style={{ width: "auto", padding: "8px 12px", fontSize: 13 }}>
+            重新載入
+          </button>
+        </div>
+      </div>
+
+      {flaggedCount > 0 && (
+        <div className="deadline-warning" style={{ margin: "0 0 12px" }}>
+          ⚠️ 共 {flaggedCount} 筆差異 ≥ 15 分，請關注
+        </div>
+      )}
+
+      {loading && <div className="loading"><div className="spinner" />載入中...</div>}
+      {error && <div className="error-page">{error}</div>}
+      {!loading && !error && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="comparison-table">
+            <thead>
+              <tr>
+                <th>員工</th>
+                <th>科別</th>
+                <th>主管</th>
+                <th>自評分</th>
+                <th>主管分</th>
+                <th>差異</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: "center", color: "#999", padding: 20 }}>尚無資料</td></tr>
+              ) : rows.map((row) => (
+                <tr key={`${row.managerName}|${row.empName}`} className={row.flagged ? "flagged" : ""}>
+                  <td>{row.empName}</td>
+                  <td>{row.section}</td>
+                  <td>{row.managerName}</td>
+                  <td>{row.selfRawScore != null ? row.selfRawScore.toFixed(1) : "—"}</td>
+                  <td>{row.managerRawScore.toFixed(1)}</td>
+                  <td>
+                    {row.diff != null ? (
+                      <>
+                        {row.diff > 0 ? "+" : ""}{row.diff.toFixed(1)}
+                        {row.flagged && <span className="flag-icon">!</span>}
+                      </>
+                    ) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Batch Scoring tab ─────────────────────────────────────────────────────
