@@ -237,8 +237,8 @@ class SheetsService:
         ws = self.worksheet("LINE帳號")
         rows = _cached_rows(ws, self.is_test, "LINE帳號")
         for i, row in enumerate(rows[1:], start=2):
-            row_name = _safe(row, _COL_ACCOUNT["name"])
-            row_emp_id = _safe(row, _COL_ACCOUNT["employeeId"])
+            row_name = _safe(row, _COL_ACCOUNT["name"]).strip()
+            row_emp_id = _safe(row, _COL_ACCOUNT["employeeId"]).strip()
             if row_name == name and row_emp_id == employee_id:
                 return self._parse_account_row(row), i
         return None, -1
