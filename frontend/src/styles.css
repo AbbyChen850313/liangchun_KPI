@@ -138,7 +138,10 @@ body {
 .score-item-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
 .score-item-desc { font-size: 12px; color: #888; margin-bottom: 8px; }
 
-.grade-buttons { display: flex; gap: 6px; }
+.score-item-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.self-grade-display { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.self-grade-label { font-size: 11px; color: #f57f17; font-weight: 600; }
+.grade-buttons { display: flex; gap: 6px; flex: 1; }
 .grade-btn {
   flex: 1; padding: 10px 0; border: 2px solid #e0e0e0; border-radius: 8px;
   font-size: 16px; font-weight: 700; background: white; cursor: pointer;

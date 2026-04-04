@@ -116,6 +116,8 @@ export default function Score() {
 
   const rawScore = calcRaw();
   const finalScore = rawScore + special;
+  const selfScores = myScores?.[empName]?.selfScores ?? null;
+  const selfRawScore = myScores?.[empName]?.selfRawScore ?? null;
 
   return (
     <div className="page">
@@ -154,27 +156,6 @@ export default function Score() {
           </div>
         )}
 
-        {myScores?.[empName]?.selfScores && (
-          <div className="self-score-panel">
-            <div className="self-score-panel-title">員工自評</div>
-            <div className="self-score-items">
-              {scoreItems?.map((item, idx) => {
-                const key = `item${idx + 1}` as keyof ScoreItems;
-                const grade = myScores[empName].selfScores![key];
-                return (
-                  <div key={item.code} className="self-score-row">
-                    <span className="self-score-item-name">{item.name}</span>
-                    <span className={`self-grade-chip grade-${grade}`}>{grade || "—"}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="self-score-avg">
-              自評平均：<strong>{myScores[empName].selfRawScore?.toFixed(1) ?? "—"}</strong>
-            </div>
-          </div>
-        )}
-
         {isLocked && (
           <div className="deadline-warning" style={{ margin: "12px 0 0" }}>
             此季度已全員完成評分，僅供檢視。
@@ -192,17 +173,27 @@ export default function Score() {
                 {item.description && (
                   <div className="score-item-desc">{item.description}</div>
                 )}
-                <div className="grade-buttons">
-                  {GRADES.map((g) => (
-                    <button
-                      key={g}
-                      className={`grade-btn${scores[key] === g ? " selected" : ""}`}
-                      onClick={() => !isLocked && setScores((s) => ({ ...s, [key]: g }))}
-                      disabled={isLocked}
-                    >
-                      {g}
-                    </button>
-                  ))}
+                <div className="score-item-row">
+                  {selfScores && (
+                    <div className="self-grade-display">
+                      <span className="self-grade-label">自評</span>
+                      <span className={`self-grade-chip grade-${selfScores[key]}`}>
+                        {selfScores[key] || "—"}
+                      </span>
+                    </div>
+                  )}
+                  <div className="grade-buttons">
+                    {GRADES.map((g) => (
+                      <button
+                        key={g}
+                        className={`grade-btn${scores[key] === g ? " selected" : ""}`}
+                        onClick={() => !isLocked && setScores((s) => ({ ...s, [key]: g }))}
+                        disabled={isLocked}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             );
@@ -233,6 +224,12 @@ export default function Score() {
         </div>
 
         <div className="score-summary">
+          {selfRawScore != null && (
+            <div className="score-row">
+              <span>員工自評均分</span>
+              <span>{selfRawScore.toFixed(1)}</span>
+            </div>
+          )}
           <div className="score-row">
             <span>原始平均分</span>
             <span>{rawScore || "-"}</span>
