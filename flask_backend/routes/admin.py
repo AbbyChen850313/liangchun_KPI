@@ -22,7 +22,7 @@ admin_bp = Blueprint("admin", __name__)
 
 # [P1] Whitelist of editable settings keys — unknown keys are rejected
 _ALLOWED_SETTINGS_KEYS = frozenset({
-    "當前季度", "評分開始日期", "評分結束日期", "綁定驗證碼",
+    "當前季度", "評分開始日", "評分截止日", "綁定驗證碼",
 })
 
 _CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
