@@ -197,12 +197,15 @@ function apiSetBridgeUrl(secret, bridgeUrl) {
 
 /**
  * 重設 NOTIFY_SECRET 並回傳新值（Bridge 首次設定用）
- * 呼叫後舊 secret 立即失效
+ * 呼叫後舊 secret 立即失效。必須提供現有 secret 才能重設（GAS-SEC-01）。
+ * 用法：POST { action: 'apiForceResetNotifySecret', args: ['<current_secret>'] }
  */
-function apiForceResetNotifySecret() {
-  const secret = Utilities.getUuid();
-  PropertiesService.getScriptProperties().setProperty('NOTIFY_SECRET', secret);
-  return { secret };
+function apiForceResetNotifySecret(currentSecret) {
+  const stored = PropertiesService.getScriptProperties().getProperty('NOTIFY_SECRET');
+  if (!stored || currentSecret !== stored) return { error: '認證失敗' };
+  const newSecret = Utilities.getUuid();
+  PropertiesService.getScriptProperties().setProperty('NOTIFY_SECRET', newSecret);
+  return { secret: newSecret };
 }
 
 /**
@@ -260,6 +263,43 @@ function apiNotifyHR(secret, message) {
 
 
 /**
+ * 驗證 LINE Webhook 請求來源（GAS-SEC-02）
+ *
+ * GAS doPost 無法存取 HTTP request headers（平台限制），因此採用兩種驗證路徑：
+ *   Path 1 — HMAC-SHA256：若有 relay proxy 將 x-line-signature 轉成 URL 參數，
+ *             可與 LINE_CHANNEL_SECRET 對比驗證（最強）
+ *   Path 2 — URL Token：在 LINE Developers Console 的 Webhook URL 加上
+ *             ?lhook=<LINE_WEBHOOK_TOKEN>，驗證此參數與 Script Property 相符
+ *   若兩者皆未設定 → 允許通過並記錄警告（向下相容；請儘早設定以啟用驗證）
+ */
+function _verifyLineWebhookOrigin(e, rawBody) {
+  const props         = PropertiesService.getScriptProperties();
+  const channelSecret = props.getProperty('LINE_CHANNEL_SECRET');
+  const webhookToken  = props.getProperty('LINE_WEBHOOK_TOKEN');
+
+  if (!channelSecret && !webhookToken) {
+    _log('WARN', '_verifyLineWebhookOrigin', 'Webhook 驗證未啟用，請設定 LINE_CHANNEL_SECRET 或 LINE_WEBHOOK_TOKEN');
+    return true;
+  }
+
+  if (channelSecret) {
+    const sig = e.parameter['x-line-signature'];
+    if (sig) {
+      const computed = Utilities.base64Encode(
+        Utilities.computeHmacSha256Signature(rawBody, channelSecret, Utilities.Charset.UTF_8)
+      );
+      return computed === sig;
+    }
+  }
+
+  if (webhookToken) {
+    return e.parameter.lhook === webhookToken;
+  }
+
+  return false;
+}
+
+/**
  * GitHub Pages 前端透過 fetch() 呼叫 GAS API
  * 接收 POST body: { action: 'apiFnName', args: [...] }
  */
@@ -270,6 +310,10 @@ function doPost(e) {
 
     // LINE Webhook 事件（Bot 收到訊息）
     if (body.events) {
+      if (!_verifyLineWebhookOrigin(e, e.postData.contents)) {
+        _log('WARN', 'doPost', 'LINE Webhook 驗證失敗：拒絕未授權請求');
+        return _jsonOut({ error: 'Unauthorized' });
+      }
       _setRequestIsTest(getActiveEnv().isTest); // 確保 webhook handler 路由到正確 Spreadsheet
       _handleLineWebhook(body.events);
       return _jsonOut({ ok: true });

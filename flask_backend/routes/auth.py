@@ -66,6 +66,7 @@ def _session_from_access_token(access_token: str, is_test: bool):
 # ── POST /api/auth/session ─────────────────────────────────────────────────
 
 @auth_bp.route("/session", methods=["POST"])
+@limiter.limit("10/minute")
 def create_session():
     """
     Verify a LIFF access token and return a signed session JWT.
@@ -84,6 +85,7 @@ def create_session():
 # ── POST /api/auth/line-oauth ──────────────────────────────────────────────
 
 @auth_bp.route("/line-oauth", methods=["POST"])
+@limiter.limit("10/minute")
 def line_oauth_session():
     """
     Exchange a LINE Login OAuth2 authorisation code for a session JWT.
@@ -109,6 +111,7 @@ def line_oauth_session():
 # ── POST /api/auth/bind ────────────────────────────────────────────────────
 
 @auth_bp.route("/bind", methods=["POST"])
+@limiter.limit("10/minute")
 def bind_account():
     """
     Bind a LINE account by verifying the access token + identity.

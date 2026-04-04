@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import logging
 
+import re
+
 from flask import Blueprint, g, jsonify, request
 
 from services.auth_service import require_auth, require_manager
@@ -28,6 +30,16 @@ scoring_bp = Blueprint("scoring", __name__)
 
 def _sheets(is_test: bool) -> SheetsService:
     return SheetsService(is_test=is_test)
+
+
+_YEAR_PATTERN = re.compile(r"^\d{3}$")
+
+
+def _validated_year(year_str: str) -> tuple[int, None] | tuple[None, tuple]:
+    """Return (int_year, None) or (None, error_response_tuple) for invalid input."""
+    if not _YEAR_PATTERN.match(year_str) or not (100 <= int(year_str) <= 200):
+        return None, (jsonify({"error": "year 參數格式錯誤，請使用民國三位數年份（如 115）"}), 400)
+    return int(year_str), None
 
 
 # ── POST /api/scoring/draft ────────────────────────────────────────────────

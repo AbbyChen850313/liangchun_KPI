@@ -120,7 +120,6 @@ def _build_stubs() -> None:
 
     gs.authorize = lambda creds: _FakeClient()
     gs.Client = _FakeClient
-    return gs  # caller can patch sheets_service.gspread directly
 
     # ── google.oauth2 ──────────────────────────────────────────────────────
     google = _stub_module("google")
@@ -157,6 +156,8 @@ def _build_stubs() -> None:
     line_pkg.v3 = _stub_module("linebot.v3")
     for sub in ["oauth", "messaging", "messaging.models", "messaging.api"]:
         _stub_module(f"linebot.v3.{sub}")
+
+    return gs  # caller can patch sheets_service.gspread directly
 
 
 _build_stubs()
