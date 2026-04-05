@@ -319,66 +319,109 @@ function PushWizardTab() {
   const { data, loading, error, refetch } = useApi<Settings>(
     () => api.get("/api/admin/settings").then((r) => r.data)
   );
+  // Manager reminder dates
   const [notify1, setNotify1] = useState("");
   const [notify2, setNotify2] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [triggering, setTriggering] = useState(false);
+  // Employee self-assessment reminder dates
+  const [empNotify1, setEmpNotify1] = useState("");
+  const [empNotify2, setEmpNotify2] = useState("");
+
+  const [savingManager, setSavingManager] = useState(false);
+  const [savingEmployee, setSavingEmployee] = useState(false);
+  const [triggeringManager, setTriggeringManager] = useState(false);
+  const [triggeringEmployee, setTriggeringEmployee] = useState(false);
   const [toast, setToast] = useState("");
 
   // Sync local state from fetched settings once
   const notify1Value = notify1 !== "" ? notify1 : (data?.["通知時間點1"] ?? "");
   const notify2Value = notify2 !== "" ? notify2 : (data?.["通知時間點2"] ?? "");
+  const empNotify1Value = empNotify1 !== "" ? empNotify1 : (data?.["員工通知時間點1"] ?? "");
+  const empNotify2Value = empNotify2 !== "" ? empNotify2 : (data?.["員工通知時間點2"] ?? "");
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3500);
   }
 
-  async function handleSaveDates() {
-    setSaving(true);
+  async function handleSaveManagerDates() {
+    setSavingManager(true);
     try {
       await api.post("/api/admin/settings", {
         ...(notify1 !== "" ? { "通知時間點1": notify1 } : {}),
         ...(notify2 !== "" ? { "通知時間點2": notify2 } : {}),
       });
-      showToast("✅ 通知日期已儲存");
+      showToast("✅ 主管通知日期已儲存");
       setNotify1("");
       setNotify2("");
       refetch();
     } catch (err: any) {
       showToast(`❌ ${err.message}`);
     } finally {
-      setSaving(false);
+      setSavingManager(false);
     }
   }
 
-  async function handleTriggerNow(isTest: boolean) {
-    setTriggering(true);
+  async function handleSaveEmployeeDates() {
+    setSavingEmployee(true);
+    try {
+      await api.post("/api/admin/settings", {
+        ...(empNotify1 !== "" ? { "員工通知時間點1": empNotify1 } : {}),
+        ...(empNotify2 !== "" ? { "員工通知時間點2": empNotify2 } : {}),
+      });
+      showToast("✅ 員工通知日期已儲存");
+      setEmpNotify1("");
+      setEmpNotify2("");
+      refetch();
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    } finally {
+      setSavingEmployee(false);
+    }
+  }
+
+  async function handleTriggerManagerNow(isTest: boolean) {
+    setTriggeringManager(true);
     try {
       const { data: res } = await api.post("/api/admin/trigger-reminder", { isTest });
       showToast(`✅ 已發送提醒給 ${res.notifiedCount} 位主管`);
     } catch (err: any) {
       showToast(`❌ ${err.message}`);
     } finally {
-      setTriggering(false);
+      setTriggeringManager(false);
+    }
+  }
+
+  async function handleTriggerEmployeeNow(isTest: boolean) {
+    setTriggeringEmployee(true);
+    try {
+      const { data: res } = await api.post("/api/admin/trigger-employee-reminder", { isTest });
+      showToast(`✅ 已發送自評提醒給 ${res.notifiedCount} 位員工`);
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    } finally {
+      setTriggeringEmployee(false);
     }
   }
 
   if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
   if (error) return <div className="error-page">{error}</div>;
 
-  const hasDirty = notify1 !== "" || notify2 !== "";
+  const hasManagerDirty = notify1 !== "" || notify2 !== "";
+  const hasEmployeeDirty = empNotify1 !== "" || empNotify2 !== "";
 
   return (
     <div className="admin-section">
       <h3>推播精靈</h3>
       <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
-        設定定時提醒日期，或立即手動發送 LINE 通知給尚未完成評分的主管。
+        設定定時提醒日期，或立即手動發送 LINE 通知。
       </p>
 
-      {/* ── Scheduled dates ── */}
+      {/* ── Manager reminder section ── */}
       <div style={{ background: "#f9f9f9", borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontWeight: 600, marginBottom: 12 }}>定時通知設定</div>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>主管評分提醒</div>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>
+          向所有尚未完成評分的主管發送 LINE Flex Message 提醒。
+        </p>
         <div className="setting-row">
           <label>通知時間點1</label>
           <input
@@ -399,36 +442,80 @@ function PushWizardTab() {
         </div>
         <button
           className="btn-primary"
-          onClick={handleSaveDates}
-          disabled={saving || !hasDirty}
-          style={{ marginTop: 8 }}
+          onClick={handleSaveManagerDates}
+          disabled={savingManager || !hasManagerDirty}
+          style={{ marginTop: 8, marginBottom: 12 }}
         >
-          {saving ? "儲存中…" : "儲存日期設定"}
+          {savingManager ? "儲存中…" : "儲存日期設定"}
         </button>
-      </div>
-
-      {/* ── Manual trigger ── */}
-      <div style={{ background: "#f9f9f9", borderRadius: 8, padding: 16 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>立即手動發送</div>
-        <p style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>
-          向所有尚未完成評分的主管發送 LINE Flex Message 提醒。
-        </p>
         <div style={{ display: "flex", gap: 10 }}>
           <button
             className="btn-secondary"
-            onClick={() => handleTriggerNow(true)}
-            disabled={triggering}
+            onClick={() => handleTriggerManagerNow(true)}
+            disabled={triggeringManager}
             style={{ flex: 1, fontSize: 13 }}
           >
-            {triggering ? "發送中…" : "🧪 測試發送"}
+            {triggeringManager ? "發送中…" : "🧪 測試發送"}
           </button>
           <button
             className="btn-primary"
-            onClick={() => handleTriggerNow(false)}
-            disabled={triggering}
+            onClick={() => handleTriggerManagerNow(false)}
+            disabled={triggeringManager}
             style={{ flex: 1, fontSize: 13 }}
           >
-            {triggering ? "發送中…" : "📣 正式發送"}
+            {triggeringManager ? "發送中…" : "📣 正式發送"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Employee self-assessment reminder section ── */}
+      <div style={{ background: "#f9f9f9", borderRadius: 8, padding: 16 }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>員工自評提醒</div>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>
+          向所有尚未完成自評的員工發送 LINE Flex Message 提醒。
+        </p>
+        <div className="setting-row">
+          <label>員工通知時間點1</label>
+          <input
+            type="date"
+            value={empNotify1Value}
+            onChange={(e) => setEmpNotify1(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </div>
+        <div className="setting-row">
+          <label>員工通知時間點2</label>
+          <input
+            type="date"
+            value={empNotify2Value}
+            onChange={(e) => setEmpNotify2(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </div>
+        <button
+          className="btn-primary"
+          onClick={handleSaveEmployeeDates}
+          disabled={savingEmployee || !hasEmployeeDirty}
+          style={{ marginTop: 8, marginBottom: 12 }}
+        >
+          {savingEmployee ? "儲存中…" : "儲存日期設定"}
+        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            className="btn-secondary"
+            onClick={() => handleTriggerEmployeeNow(true)}
+            disabled={triggeringEmployee}
+            style={{ flex: 1, fontSize: 13 }}
+          >
+            {triggeringEmployee ? "發送中…" : "🧪 測試發送"}
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => handleTriggerEmployeeNow(false)}
+            disabled={triggeringEmployee}
+            style={{ flex: 1, fontSize: 13 }}
+          >
+            {triggeringEmployee ? "發送中…" : "📣 正式發送"}
           </button>
         </div>
       </div>
