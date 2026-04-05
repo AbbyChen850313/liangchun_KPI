@@ -3,10 +3,16 @@
  * Tests can swap in a stub; production uses RealLiffAdapter.
  */
 
-const LIFF_ID = import.meta.env.VITE_LIFF_ID as string;
+const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
+// Use separate LIFF app IDs per environment so LINE validates the endpoint URL correctly.
+// Test LIFF app must have endpoint = https://linchun-hr-test.web.app
+// Prod LIFF app must have endpoint = https://linchun-hr.web.app
+const LIFF_ID = IS_TEST
+  ? (import.meta.env.VITE_LIFF_ID_TEST as string)
+  : (import.meta.env.VITE_LIFF_ID as string);
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 const LIFF_INIT_TIMEOUT_MS = 12_000;
-const LIFF_ENDPOINT = import.meta.env.VITE_IS_TEST === "true"
+const LIFF_ENDPOINT = IS_TEST
   ? "https://linchun-hr-test.web.app"
   : "https://linchun-hr.web.app";
 
