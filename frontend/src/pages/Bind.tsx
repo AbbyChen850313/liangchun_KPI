@@ -1,6 +1,9 @@
 /**
  * Bind page — new user identity verification + LINE account binding.
- * Flow: verify bind code → enter name + employeeId → bind via LIFF access token
+ * Flow: verify bind code (optional) → fill dynamic identity fields → bind via LIFF
+ *
+ * Field definitions are fetched from /api/auth/bind-fields and rendered dynamically,
+ * so new projects can customise identity fields without touching this component.
  */
 
 import { useState, useEffect } from "react";
@@ -11,18 +14,49 @@ const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
 
 type Step = "code" | "identity" | "success";
 
+interface BindField {
+  key: string;
+  label: string;
+  type: "text" | "select" | "phone";
+  placeholder?: string;
+  required?: boolean;
+  options?: string[];
+}
+
+interface BindConfig {
+  useVerifyCode: boolean;
+  fields: BindField[];
+}
+
+const DEFAULT_CONFIG: BindConfig = {
+  useVerifyCode: true,
+  fields: [
+    { key: "name", label: "姓名", type: "text", placeholder: "請輸入真實姓名", required: true },
+    { key: "employeeId", label: "員工編號", type: "text", placeholder: "請輸入員工編號", required: true },
+  ],
+};
+
 export default function Bind() {
   const [step, setStep] = useState<Step>("code");
+  const [bindConfig, setBindConfig] = useState<BindConfig>(DEFAULT_CONFIG);
   const [bindCode, setBindCode] = useState("");
-  const [name, setName] = useState("");
-  const [employeeId, setEmployeeId] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successName, setSuccessName] = useState("");
 
-  // On mount: if a bind token exists, check whether this LINE display name is
-  // already in the employee list — if so, skip the verify-code step.
+  // Fetch bind field config on mount; also check whether to skip verify-code step.
   useEffect(() => {
+    api
+      .get<BindConfig>("/api/auth/bind-fields", { params: { isTest: IS_TEST } })
+      .then(({ data }) => {
+        setBindConfig(data);
+        if (!data.useVerifyCode) setStep("identity");
+      })
+      .catch(() => {
+        // Keep defaults on error
+      });
+
     const storedToken = sessionStorage.getItem("line_bind_token");
     if (!storedToken) return;
 
@@ -33,10 +67,12 @@ export default function Bind() {
       .then(({ data }) => {
         if (data.inEmployeeList) setStep("identity");
       })
-      .catch(() => {
-        // On error keep the default "code" step
-      });
+      .catch(() => {});
   }, []);
+
+  function setField(key: string, value: string) {
+    setFieldValues((prev) => ({ ...prev, [key]: value }));
+  }
 
   async function handleVerifyCode() {
     setError("");
@@ -60,9 +96,12 @@ export default function Bind() {
 
   async function handleBind() {
     setError("");
-    if (!name.trim() || !employeeId.trim()) {
-      setError("請填寫姓名與員工編號");
-      return;
+
+    for (const field of bindConfig.fields) {
+      if (field.required && !(fieldValues[field.key] || "").trim()) {
+        setError(`請填寫${field.label}`);
+        return;
+      }
     }
 
     // Resolve LINE identity: LIFF token (inside LINE) or bind token (external browser)
@@ -79,8 +118,9 @@ export default function Bind() {
     try {
       const { data } = await api.post("/api/auth/bind", {
         ...(accessToken ? { accessToken } : { bindToken }),
-        name: name.trim(),
-        employeeId: employeeId.trim(),
+        ...Object.fromEntries(
+          Object.entries(fieldValues).map(([k, v]) => [k, v.trim()])
+        ),
         isTest: IS_TEST,
       });
 
@@ -120,23 +160,31 @@ export default function Bind() {
       <div className="page-center">
         <div className="card">
           <h2>帳號綁定</h2>
-          <p className="hint">請輸入您的姓名與員工編號進行身份驗證</p>
+          <p className="hint">請輸入您的資料進行身份驗證</p>
 
-          <label>姓名</label>
-          <input
-            type="text"
-            placeholder="請輸入真實姓名"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <label>員工編號</label>
-          <input
-            type="text"
-            placeholder="請輸入員工編號"
-            value={employeeId}
-            onChange={(e) => setEmployeeId(e.target.value)}
-          />
+          {bindConfig.fields.map((field) => (
+            <div key={field.key}>
+              <label>{field.label}</label>
+              {field.type === "select" ? (
+                <select
+                  value={fieldValues[field.key] ?? ""}
+                  onChange={(e) => setField(field.key, e.target.value)}
+                >
+                  <option value="">請選擇</option>
+                  {(field.options ?? []).map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={field.type === "phone" ? "tel" : "text"}
+                  placeholder={field.placeholder ?? ""}
+                  value={fieldValues[field.key] ?? ""}
+                  onChange={(e) => setField(field.key, e.target.value)}
+                />
+              )}
+            </div>
+          ))}
 
           {error && <p className="error">{error}</p>}
 

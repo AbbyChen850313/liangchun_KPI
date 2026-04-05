@@ -20,6 +20,7 @@ from services.auth_service import (
     require_hr,
     require_sysadmin,
 )
+from services.bind_config_service import get_bind_config, validate_bind_fields
 from services.line_service import exchange_auth_code, push_message, verify_access_token
 from services.sheets_service import SheetsService
 
@@ -114,28 +115,44 @@ def line_oauth_session():
     return _session_from_access_token(access_token, is_test)
 
 
+# ── GET /api/auth/bind-fields ──────────────────────────────────────────────
+
+@auth_bp.route("/bind-fields", methods=["GET"])
+@limiter.limit("60/minute")
+def get_bind_fields():
+    """
+    Return bind field configuration for the frontend to render dynamically.
+
+    Query: { "isTest": bool }
+    Response: { "useVerifyCode": bool, "fields": [...] }
+    """
+    is_test = request.args.get("isTest", "false").lower() == "true"
+    return jsonify(get_bind_config(is_test))
+
+
 # ── POST /api/auth/bind ────────────────────────────────────────────────────
 
 @auth_bp.route("/bind", methods=["POST"])
 @limiter.limit("10/minute")
 def bind_account():
     """
-    Bind a LINE account by verifying the access token + identity.
+    Bind a LINE account using dynamically-configured identity fields.
 
     Body: {
-      "accessToken": str,
-      "name": str,
-      "employeeId": str,
-      "isTest": bool
+      "accessToken": str,       # LIFF token (inside LINE app)
+      "bindToken": str,         # bind token (external browser)
+      "isTest": bool,
+      ...field_values           # keys/values per _config/bind_fields (e.g. name, employeeId)
     }
     """
     body = request.get_json(silent=True) or {}
-    name = (body.get("name") or "").strip()
-    employee_id = (body.get("employeeId") or "").strip()
     is_test = bool(body.get("isTest", False))
 
-    if not name or not employee_id:
-        return jsonify({"error": "缺少姓名或員工編號"}), 400
+    # Validate identity fields against config
+    bind_config = get_bind_config(is_test)
+    field_values, field_error = validate_bind_fields(bind_config["fields"], body)
+    if field_error:
+        return jsonify({"error": field_error}), 400
 
     # Resolve LINE identity: accept either LIFF access token or bind token
     bind_token_str = (body.get("bindToken") or "").strip()
@@ -163,7 +180,9 @@ def bind_account():
     if existing:
         return jsonify({"error": "此帳號已綁定，如需重新綁定請聯繫 HR"}), 409
 
-    # Find the account row by identity
+    # Find the account row using name + employeeId (KPI identity fields)
+    name = field_values.get("name", "")
+    employee_id = field_values.get("employeeId", "")
     account, sheet_row = sheets.find_account_by_identity(name, employee_id)
     if not account:
         return jsonify({"error": "找不到符合的員工資料，請確認姓名與員工編號"}), 404
@@ -181,11 +200,11 @@ def bind_account():
     write_audit_log(
         actor_name=name, actor_uid=line_uid,
         action="bind_account",
-        details={"employeeId": employee_id, "displayName": display_name},
+        details={**field_values, "displayName": display_name},
         is_test=is_test,
     )  # [P1-AUDIT-03]
 
-    # Notify binding success via LINE message; failure must not undo a successful bind
+    # Notify binding success; failure must not undo a successful bind
     try:
         push_message(
             line_uid,
