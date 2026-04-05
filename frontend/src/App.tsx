@@ -3,6 +3,7 @@ import { useLiff } from "./hooks/useLiff";
 import Admin from "./pages/Admin";
 import Bind from "./pages/Bind";
 import Dashboard from "./pages/Dashboard";
+import ManagerBatch from "./pages/ManagerBatch";
 import Score from "./pages/Score";
 import SeasonScore from "./pages/SeasonScore";
 import SelfScore from "./pages/SelfScore";
@@ -47,6 +48,7 @@ function AuthenticatedRoutes() {
       <Route path="/self-score" element={<SelfScore />} />
       <Route path="/season-score" element={<SeasonScore />} />
       <Route path="/admin" element={<Admin />} />
+      <Route path="/manager-batch" element={<ManagerBatch />} />
       <Route path="/sysadmin" element={<SysAdmin />} />
       <Route path="/diary" element={<WorkDiary />} />
       <Route path="*" element={<Navigate to="/" replace />} />

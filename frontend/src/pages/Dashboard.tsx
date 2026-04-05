@@ -271,6 +271,12 @@ function ManagerView({
         </button>
         <button
           className="filter-btn"
+          onClick={() => navigate("/manager-batch")}
+        >
+          批次評分
+        </button>
+        <button
+          className="filter-btn"
           onClick={() => navigate("/diary")}
         >
           工作日誌

@@ -10,6 +10,7 @@ import re
 
 from flask import Blueprint, g, jsonify, request
 
+from extensions import limiter
 from services.audit_service import write_audit_log
 from services.auth_service import require_auth, require_hr, require_manager
 from services.scoring_service import (
@@ -452,6 +453,114 @@ def get_employee_history():
             score_by_quarter[s["quarter"]] = s.get("weightedScore")
 
     return jsonify({"empName": emp_name, "year": year, "quarters": score_by_quarter})
+
+
+# ── POST /api/scoring/manager-batch-submit ────────────────────────────────
+
+@scoring_bp.route("/manager-batch-submit", methods=["POST"])
+@require_manager
+@limiter.limit("10/hour")
+def manager_batch_submit():
+    """
+    Manager batch submit: score multiple employees in one request.
+    Each entry uses the session manager's identity; section-isolation enforced per entry.
+    AC2: per-entry validation — failed entries are returned, others proceed.
+    """
+    session = g.session
+    manager_name: str = session["name"]
+    line_uid: str = session["lineUid"]
+    is_test: bool = session.get("isTest", False)
+
+    body = request.get_json(silent=True) or {}
+    quarter: str = (body.get("quarter") or "").strip()
+    entries: list[dict] = body.get("entries") or []
+
+    if not entries:
+        return jsonify({"error": "必須提供 entries"}), 400
+
+    sheets = _sheets(is_test)
+    settings = sheets.get_settings()
+
+    if not quarter:
+        quarter = settings.get("當前季度") or current_quarter()
+
+    # Validate scoring period
+    if not is_in_scoring_period(settings):
+        return jsonify({"error": "不在評分期間內，無法送出"}), 403
+
+    responsibilities = sheets.get_manager_responsibilities()
+    manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
+
+    all_employees = sheets.get_all_employees()
+    section_employee_names = {e["name"] for e in all_employees if e["section"] in manager_sections}
+
+    # Pre-fetch submitted keys for idempotency guard
+    existing_scores = sheets.get_scores_by_manager(quarter, manager_name)
+    submitted_keys = {s["empName"] for s in existing_scores if s["status"] == "已送出"}
+
+    submitted, skipped, failed = 0, 0, []
+    for entry in entries:
+        emp_name = (entry.get("empName") or "").strip()
+        section = (entry.get("section") or "").strip()
+        scores_raw: dict = entry.get("scores") or {}
+        special_raw = float(entry.get("special") or 0)
+        note = (entry.get("note") or "").strip()
+
+        if not emp_name or not section:
+            failed.append({"empName": emp_name or "?", "error": "缺少必要欄位"})
+            continue
+
+        if not (-20 <= special_raw <= 20):
+            failed.append({"empName": emp_name, "error": "special 加減分必須在 -20 到 20 之間"})
+            continue
+
+        if len(note) > 500:
+            failed.append({"empName": emp_name, "error": "備註不可超過 500 字"})
+            continue
+
+        # Section isolation: manager can only score their own sections
+        if section not in manager_sections:
+            failed.append({"empName": emp_name, "error": "無此科別的評分權限"})
+            continue
+
+        if emp_name not in section_employee_names:
+            failed.append({"empName": emp_name, "error": "此員工不在指定科別中"})
+            continue
+
+        # Idempotency: silently skip entries already submitted
+        if emp_name in submitted_keys:
+            skipped += 1
+            continue
+
+        # Validate all 6 items filled
+        missing = [f"item{i}" for i in range(1, 7) if not scores_raw.get(f"item{i}")]
+        if missing:
+            failed.append({"empName": emp_name, "error": f"評分項目未填完：{', '.join(missing)}"})
+            continue
+
+        try:
+            record = build_score_record(
+                manager_name, line_uid, emp_name, section,
+                scores_raw, special_raw, note, quarter, responsibilities,
+            )
+            sheets.upsert_score(record)
+            submitted += 1
+        except Exception as exc:
+            logger.exception("manager_batch_submit failed: %s/%s", manager_name, emp_name)
+            failed.append({"empName": emp_name, "error": str(exc)})
+
+    logger.info(
+        "AUDIT | route=manager_batch_submit | actor=%s(%s) | action=manager_batch_submit"
+        " | quarter=%s | submitted=%d | skipped=%d | failed=%d",
+        manager_name, line_uid, quarter, submitted, skipped, len(failed),
+    )
+    write_audit_log(
+        actor_name=manager_name, actor_uid=line_uid,
+        action="manager_batch_submit",
+        details={"quarter": quarter, "submitted": submitted, "skipped": skipped, "failedCount": len(failed)},
+        is_test=is_test,
+    )
+    return jsonify({"success": True, "submitted": submitted, "skipped": skipped, "failed": failed})
 
 
 # ── GET /api/scoring/items ─────────────────────────────────────────────────
