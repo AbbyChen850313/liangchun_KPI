@@ -87,7 +87,7 @@ export interface ScoreResult {
 
 export interface AnnualEmployeeSummary {
   quarters: Record<string, number | null>;  // e.g. { "115Q1": 80.5, "115Q2": null }
-  annualTotal: number;
+  annualAvg: number;
   completedCount: number;
 }
 

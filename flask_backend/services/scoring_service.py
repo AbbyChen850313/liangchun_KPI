@@ -117,16 +117,19 @@ def aggregate_annual_scores(
     Aggregate per-quarter weighted scores into an annual summary.
 
     Input:  { empName: { "115Q1": 80.5, "115Q2": None, "115Q3": 90.0, "115Q4": None } }
-    Output: { empName: { quarters: {...}, annualTotal: float, completedCount: int } }
+    Output: { empName: { quarters: {...}, annualAvg: float, completedCount: int } }
+    annualAvg = avg(completed quarters), per spec: 年度總分 = avg(Q1~Q4 weightedScore).
     None indicates the quarter has not been scored yet.
     """
     result = {}
     for emp_name, q_scores in scores_by_emp.items():
         completed = {q: v for q, v in q_scores.items() if v is not None}
+        count = len(completed)
+        quarter_sum = sum(completed.values())
         result[emp_name] = {
             "quarters": q_scores,
-            "annualTotal": round(sum(completed.values()), 2),
-            "completedCount": len(completed),
+            "annualAvg": round(quarter_sum / count, 2) if count > 0 else 0.0,
+            "completedCount": count,
         }
     return result
 

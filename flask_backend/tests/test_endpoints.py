@@ -182,7 +182,7 @@ for sub in ["oauth", "messaging", "messaging.models", "messaging.api"]:
     _stub_module(f"linebot.v3.{sub}")
 
 # ── Set required env vars before importing config ─────────────────────────
-os.environ.setdefault("JWT_SECRET", "test-secret-for-pytest")
+os.environ.setdefault("JWT_SECRET", "test-secret-for-pytest-min32chars!!")
 os.environ.setdefault("GCP_SA_KEY", json.dumps({
     "type": "service_account",
     "project_id": "test",
@@ -400,7 +400,33 @@ class TestExportAnnualCsv:
         lines = res.data.decode("utf-8-sig").splitlines()
         header = lines[0]
         assert "115Q1加權分" in header
-        assert "全年加總" in header
+        assert "最終年度總分" in header
+
+
+class TestYearValidation:
+    """Invalid user-supplied year param must return 400, not crash with 500."""
+
+    def test_annual_summary_invalid_year_returns_400(self, client):
+        res = client.get(
+            "/api/scoring/annual-summary?year=abc",
+            headers=_auth_header(role="主管"),
+        )
+        assert res.status_code == 400
+        assert "year" in res.get_json().get("error", "").lower() or "年份" in res.get_json().get("error", "")
+
+    def test_season_status_invalid_year_returns_400(self, client):
+        res = client.get(
+            "/api/scoring/season-status?year=99",
+            headers=_auth_header(role="主管"),
+        )
+        assert res.status_code == 400
+
+    def test_employee_history_invalid_year_returns_400(self, client):
+        res = client.get(
+            "/api/scoring/employee-history?empName=王員工&year=abc",
+            headers=_auth_header(role="主管"),
+        )
+        assert res.status_code == 400
 
 
 class TestUnknownRoute:
@@ -538,24 +564,24 @@ class TestScoringCalculations:
 
 
 class TestAggregateAnnualScores:
-    """AC2: 四季總分 = Q1+Q2+Q3+Q4，無重複或漏計"""
+    """AC2: 年度均分 = avg(已完成季度)，無重複或漏計"""
 
-    def test_all_four_quarters_sum(self):
+    def test_all_four_quarters_avg(self):
         data = {"王員工": {"115Q1": 80.0, "115Q2": 75.0, "115Q3": 90.0, "115Q4": 85.0}}
         result = aggregate_annual_scores(data)
-        assert result["王員工"]["annualTotal"] == 330.0
+        assert result["王員工"]["annualAvg"] == 82.5   # (80+75+90+85)/4
         assert result["王員工"]["completedCount"] == 4
 
     def test_partial_quarters_exclude_none(self):
         data = {"李員工": {"115Q1": 80.0, "115Q2": None, "115Q3": 90.0, "115Q4": None}}
         result = aggregate_annual_scores(data)
-        assert result["李員工"]["annualTotal"] == 170.0
+        assert result["李員工"]["annualAvg"] == 85.0   # (80+90)/2
         assert result["李員工"]["completedCount"] == 2
 
     def test_all_none_returns_zero(self):
         data = {"陳員工": {"115Q1": None, "115Q2": None, "115Q3": None, "115Q4": None}}
         result = aggregate_annual_scores(data)
-        assert result["陳員工"]["annualTotal"] == 0.0
+        assert result["陳員工"]["annualAvg"] == 0.0
         assert result["陳員工"]["completedCount"] == 0
 
     def test_multiple_employees_independent(self):
@@ -564,8 +590,8 @@ class TestAggregateAnnualScores:
             "林員工": {"115Q1": 70.0, "115Q2": 80.0, "115Q3": None, "115Q4": None},
         }
         result = aggregate_annual_scores(data)
-        assert result["張員工"]["annualTotal"] == 330.0
-        assert result["林員工"]["annualTotal"] == 150.0
+        assert result["張員工"]["annualAvg"] == 82.5   # (80+75+90+85)/4
+        assert result["林員工"]["annualAvg"] == 75.0   # (70+80)/2
 
 
 class TestScoreModification:
@@ -575,7 +601,7 @@ class TestScoreModification:
         """route 在傳入 aggregate 前已過濾 status != 已送出；None 語義驗證"""
         data = {"王員工": {"115Q1": None, "115Q2": 80.0, "115Q3": None, "115Q4": None}}
         result = aggregate_annual_scores(data)
-        assert result["王員工"]["annualTotal"] == 80.0
+        assert result["王員工"]["annualAvg"] == 80.0   # 80/1
         assert result["王員工"]["completedCount"] == 1
 
     def test_resubmit_returns_409(self, client):

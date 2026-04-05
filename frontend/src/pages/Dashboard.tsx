@@ -326,7 +326,7 @@ function AnnualSummaryTable({ data }: { data: AnnualSummaryResponse }) {
           <tr>
             <th>員工</th>
             {data.quarters.map((q) => <th key={q}>{q.slice(-2)}</th>)}
-            <th>全年加總</th>
+            <th>年度均分</th>
           </tr>
         </thead>
         <tbody>
@@ -340,7 +340,7 @@ function AnnualSummaryTable({ data }: { data: AnnualSummaryResponse }) {
                     : <span className="badge-pending">未評分</span>}
                 </td>
               ))}
-              <td><strong>{row.annualTotal}</strong></td>
+              <td><strong>{row.annualAvg}</strong></td>
             </tr>
           ))}
         </tbody>

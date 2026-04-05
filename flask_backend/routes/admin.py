@@ -384,7 +384,7 @@ def export_annual_scores_csv():
             v = data["quarters"].get(q)
             row.append(v if v is not None else "未評分")
         completed_count: int = data["completedCount"]
-        annual_avg = round(data["annualTotal"] / completed_count, 2) if completed_count > 0 else 0.0
+        annual_avg: float = data["annualAvg"]
         annual_special = adj_map.get(emp, 0.0)
         final_annual_score = round(annual_avg + annual_special, 2)
         grade = _annual_grade(final_annual_score) if completed_count > 0 else "未完成"
@@ -440,8 +440,7 @@ def get_annual_adjust():
     rows = []
     for emp_name, data in sorted(summary.items()):
         completed_count: int = data["completedCount"]
-        annual_total: float = data["annualTotal"]
-        annual_avg = round(annual_total / completed_count, 2) if completed_count > 0 else 0.0
+        annual_avg: float = data["annualAvg"]
         annual_special = adj_map.get(emp_name, 0.0)
         rows.append({
             "empName": emp_name,

@@ -269,7 +269,7 @@ def get_annual_summary():
     Return Q1~Q4 weighted score breakdown for all employees under the current manager.
 
     Query param: year (ROC year, e.g. 115). Defaults to the year of the current quarter.
-    AC1: All four quarters scored → annualTotal = sum of Q1~Q4.
+    AC1: All four quarters scored → annualAvg = avg(Q1~Q4).
     AC2: Missing quarter → quarters[q] = null (frontend shows 未評分).
     """
     session = g.session
