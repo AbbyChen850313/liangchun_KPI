@@ -333,7 +333,7 @@ def export_annual_scores_csv():
     Export all-employee Q1~Q4 weighted scores as CSV for a given ROC year (AC3).
 
     Query param: year (ROC year, e.g. 115).
-    Columns: 員工, 主管, 科別, Q1加權分 … Q4加權分, 全年加總, 已完成季度數.
+    Columns: 員工, 主管, 科別, Q1加權分 … Q4加權分, 最終年度總分, 已完成季度數.
     """
     is_test: bool = g.session.get("isTest", False)
     year = request.args.get("year", "").strip()
