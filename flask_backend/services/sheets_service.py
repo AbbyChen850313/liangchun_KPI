@@ -336,6 +336,23 @@ class SheetsService:
             dest_ws.append_rows(eligible, value_input_option="USER_ENTERED")
         _invalidate(self.is_test, "員工資料")
 
+        # Sync to unified Firestore employees collection
+        try:
+            emp_dicts = [
+                {
+                    "empId": row[0],
+                    "name": row[1],
+                    "dept": row[2],
+                    "section": row[3],
+                    "joinDate": row[4],
+                    "leaveDate": row[5],
+                }
+                for row in eligible
+            ]
+            self._sync_employees_to_firestore(emp_dicts)
+        except Exception:
+            logger.exception("Auto _sync_employees_to_firestore after sync_employees failed; skipping.")
+
         # Automatically sync roles so Firestore reflects latest Sheets data
         try:
             self.refresh_roles_in_firestore()
@@ -343,6 +360,45 @@ class SheetsService:
             logger.exception("Auto refresh_roles after sync_employees failed; skipping.")
 
         return len(eligible)
+
+    def _sync_employees_to_firestore(self, employees: list[dict]) -> int:
+        """Upsert employee base records into Firestore employees collection. Returns count."""
+        import config
+        try:
+            import firebase_admin
+            from firebase_admin import credentials as fb_creds, firestore as fb_store
+        except ImportError as exc:
+            raise RuntimeError("firebase-admin not installed") from exc
+
+        if not firebase_admin._apps:
+            sa_info = config.gcp_sa_info()
+            firebase_admin.initialize_app(fb_creds.Certificate(sa_info))
+
+        db = fb_store.client()
+        prefix = "test_" if self.is_test else ""
+        collection_name = f"{prefix}employees"
+
+        updated = 0
+        for emp in employees:
+            emp_id = emp.get("empId") or emp.get("employeeId")
+            if not emp_id:
+                continue
+            doc_data = {
+                "empId": emp_id,
+                "name": emp.get("name", ""),
+                "dept": emp.get("dept", ""),
+                "section": emp.get("section", ""),
+                "joinDate": emp.get("joinDate", ""),
+                "leaveDate": emp.get("leaveDate", ""),
+            }
+            db.collection(collection_name).document(emp_id).set(doc_data, merge=True)
+            updated += 1
+
+        logger.info(
+            "_sync_employees_to_firestore: upserted %d employees (env=%s)",
+            updated, collection_name,
+        )
+        return updated
 
     # ── Manager weights (主管權重) ─────────────────────────────────────────
 
@@ -642,7 +698,8 @@ class SheetsService:
 
         db = fb_store.client()
         prefix = "test_" if self.is_test else ""
-        collection_name = f"{prefix}accounts"
+        accounts_col = f"{prefix}accounts"
+        employees_col = f"{prefix}employees"
 
         accounts = self.get_all_accounts()
         updated = 0
@@ -653,13 +710,23 @@ class SheetsService:
             role = account.get("role") or self._derive_role_from_job_title(
                 account.get("jobTitle", "")
             )
-            db.collection(collection_name).document(uid).set(
+            db.collection(accounts_col).document(uid).set(
                 {"role": role, "name": account.get("name", "")},
                 merge=True,
             )
+            # Also update unified employees collection with lineUid / role / title
+            emp_id = account.get("employeeId")
+            if emp_id:
+                emp_update = {
+                    "role": role,
+                    "title": account.get("jobTitle", ""),
+                }
+                if uid:
+                    emp_update["lineUid"] = uid
+                db.collection(employees_col).document(emp_id).set(emp_update, merge=True)
             updated += 1
 
-        logger.info("refresh_roles_in_firestore: updated %d accounts (env=%s)", updated, collection_name)
+        logger.info("refresh_roles_in_firestore: updated %d accounts (env=%s)", updated, accounts_col)
         return updated
 
     # ── Annual HR adjustments (年度調整) ──────────────────────────────────────
