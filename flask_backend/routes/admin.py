@@ -27,6 +27,7 @@ admin_bp = Blueprint("admin", __name__)
 _ALLOWED_SETTINGS_KEYS = frozenset({
     "當前季度", "評分開始日", "評分截止日", "綁定驗證碼",
     "通知時間點1", "通知時間點2",
+    "員工通知時間點1", "員工通知時間點2",
 })
 
 _CSV_INJECTION_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
@@ -594,6 +595,56 @@ def trigger_reminder():
     write_audit_log(
         actor_name=g.session["name"], actor_uid=g.session["lineUid"],
         action="trigger_reminder",
+        details={"isTest": is_test, "notifiedCount": notified_count},
+        is_test=is_test,
+    )
+    return jsonify(result)
+
+
+# ── POST /api/admin/trigger-employee-reminder ─────────────────────────────
+
+@admin_bp.route("/trigger-employee-reminder", methods=["POST"])
+@require_hr
+@limiter.limit("10/hour")
+def trigger_employee_reminder():
+    """Manually trigger LINE self-assessment reminders to employees via GAS.
+
+    Body (optional): { isTest: bool }
+    GAS apiTriggerEmployeeReminders verifies lineUid has HR/SysAdmin role server-side.
+    """
+    is_test: bool = g.session.get("isTest", False)
+    body = request.get_json(silent=True) or {}
+    if "isTest" in body:
+        is_test = bool(body["isTest"])
+
+    try:
+        gas_url = config.gas_web_app_url()
+    except RuntimeError:
+        return jsonify({"error": "GAS_WEB_APP_URL 未設定，請聯繫系統管理員"}), 503
+
+    gas_payload = {
+        "action": "apiTriggerEmployeeReminders",
+        "args": [g.session["lineUid"], is_test],
+    }
+    try:
+        resp = _http.post(gas_url, json=gas_payload, timeout=60)
+        result = resp.json()
+    except Exception as exc:
+        logger.error("GAS trigger-employee-reminder failed: %s", exc)
+        return jsonify({"error": f"GAS 呼叫失敗：{exc}"}), 502
+
+    if result.get("error"):
+        return jsonify(result), 400
+
+    notified_count = result.get("notifiedCount", 0)
+    logger.info(
+        "AUDIT | route=trigger_employee_reminder | actor=%s(%s) | action=trigger_employee_reminder"
+        " | isTest=%s | notifiedCount=%s",
+        g.session["name"], g.session["lineUid"], is_test, notified_count,
+    )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="trigger_employee_reminder",
         details={"isTest": is_test, "notifiedCount": notified_count},
         is_test=is_test,
     )

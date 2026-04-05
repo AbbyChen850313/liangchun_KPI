@@ -139,8 +139,10 @@ function initSettingsSheet() {
     ['評分期間描述', _quarterToDescription(quarter), '顯示在介面上的期間文字（留空則自動依季度推算）'],
     ['評分開始日', '', '評分開放日期（YYYY/MM/DD）'],
     ['評分截止日', '', '評分截止日期（YYYY/MM/DD）'],
-    ['通知時間點1', '', '第一次提醒日期（YYYY/MM/DD）'],
-    ['通知時間點2', '', '第二次提醒日期（YYYY/MM/DD）'],
+    ['通知時間點1', '', '主管第一次提醒日期（YYYY/MM/DD）'],
+    ['通知時間點2', '', '主管第二次提醒日期（YYYY/MM/DD）'],
+    ['員工通知時間點1', '', '員工自評第一次提醒日期（YYYY/MM/DD）'],
+    ['員工通知時間點2', '', '員工自評第二次提醒日期（YYYY/MM/DD）'],
     ['試用期天數', '90', '未滿幾天算試用期（黃底顯示）'],
     ['最低評分天數', '3', '到職滿幾天才納入評分'],
     ['RichMenu_A', '', '公開選單 richMenuId（setupRichMenus() 後自動填入）'],
@@ -257,6 +259,17 @@ function _initSystemDocSheet() {
     ['系統設定', '當前季度', '留空則自動依當下時間推算（如 115Q1 = 民國115年第一季）'],
     ['系統設定', '評分期間描述', '留空則自動由季度推算（如 115Q1 → 115/1~3月）'],
     ['系統設定', 'RichMenu_A/B/C1/C2', '執行 setupRichMenus() 後自動填入，請勿手動修改'],
+    ['系統設定', '通知時間點1/2', '主管評分提醒日期（YYYY/MM/DD）'],
+    ['系統設定', '員工通知時間點1/2', '員工自評提醒日期（YYYY/MM/DD）'],
+    ['', '', ''],
+    ['自評記錄', 'A 季度', '如 115Q1'],
+    ['自評記錄', 'B 員工姓名', ''],
+    ['自評記錄', 'C 員工編號', ''],
+    ['自評記錄', 'D~I 六項自評', '職能專業度、工作效率、成本意識、部門合作、責任感、主動積極（甲乙丙丁）'],
+    ['自評記錄', 'J 自評分數', '六項平均分'],
+    ['自評記錄', 'K 備註', ''],
+    ['自評記錄', 'L 狀態', '草稿 / 已送出'],
+    ['自評記錄', 'M 最後更新', ''],
   ];
 
   sheet.getRange(1, 1, data.length, 3).setValues(data);
@@ -457,5 +470,26 @@ function _initTestChecklistSheet() {
   sheet.setColumnWidth(6, 280);
   sheet.setColumnWidth(7, 60);
   sheet.setColumnWidth(8, 120);
+  sheet.setFrozenRows(1);
+}
+
+/**
+ * 初始化員工自評記錄工作表
+ * 欄位：季度、員工姓名、員工編號、item1~6、自評分數、備註、狀態、最後更新
+ */
+function initSelfAssessSheet() {
+  const ss = _ss();
+  let sheet = ss.getSheetByName('自評記錄');
+  if (!sheet) sheet = ss.insertSheet('自評記錄');
+
+  sheet.clearContents();
+  const headers = [[
+    '季度', '員工姓名', '員工編號',
+    '職能專業度', '工作效率', '成本意識', '部門合作', '責任感', '主動積極',
+    '自評分數', '備註', '狀態', '最後更新',
+  ]];
+  sheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+  sheet.getRange(1, 1, 1, headers[0].length)
+    .setFontWeight('bold').setBackground('#4a90d9').setFontColor('#ffffff');
   sheet.setFrozenRows(1);
 }

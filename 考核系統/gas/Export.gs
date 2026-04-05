@@ -113,6 +113,7 @@ function initAllSheets() {
   initEmployeeSheet();
   initWeightSheet();
   initScoreSheet();
+  initSelfAssessSheet();
   initScoreItemsSheet();
   initDocumentationSheets();
   Logger.log('所有工作表初始化完成');

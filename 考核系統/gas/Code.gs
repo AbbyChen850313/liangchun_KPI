@@ -329,7 +329,8 @@ function doPost(e) {
       apiGetDashboard:        a => !!a[1],
       apiGetAllStatus:        a => !!a[1],
       apiGetManagerDashboard: a => !!a[2],
-      apiTriggerReminders:    a => !!a[1],
+      apiTriggerReminders:         a => !!a[1],
+      apiTriggerEmployeeReminders: a => !!a[1],
       apiExportExcel:         a => !!a[2],
       apiSaveDraft:           a => !!(a[0] && a[0].isTest),
       apiSubmitScore:         a => !!(a[0] && a[0].isTest),
@@ -356,6 +357,7 @@ function doPost(e) {
       apiGetAllStatus,
       apiUpdateSettings,
       apiTriggerReminders,
+      apiTriggerEmployeeReminders,
       apiExportExcel,
       apiGetAllAccounts,
       apiResetAccount,
@@ -626,6 +628,12 @@ function apiTriggerReminders(lineUid, isTest) {
   return sendReminderToAll(getCurrentQuarter(), !!isTest);
 }
 
+function apiTriggerEmployeeReminders(lineUid, isTest) {
+  const info = _verifyHROrSysAdmin(lineUid);
+  if (info.error) return info;
+  return sendSelfAssessReminderToAll(getCurrentQuarter(), !!isTest);
+}
+
 function apiExportExcel(lineUid, quarter, isTest) {
   const info = _verifyHROrSysAdmin(lineUid);
   if (info.error) return info;
@@ -890,6 +898,21 @@ function _handleLineWebhook(events) {
     } else if (/^gcloud-code:/i.test(text)) {
       _handleGcloudCode(text, replyToken);
 
+    // ── 系統報告：提醒在 Claude Code 觸發 ────────────────────────
+    } else if (text === '系統報告' || text === '全系統review' || text === 'system report') {
+      _lineReply(replyToken, [
+        '📊 系統報告觸發方式：',
+        '',
+        '請在 Claude Code 中說以下任一句：',
+        '• 系統報告',
+        '• 全系統 review',
+        '• 系統狀態',
+        '',
+        '會自動派 4 個 AI agent 並行調查三大系統，',
+        '產出完整報告 + PM 白話文簡報到：',
+        'projects/system_report.md',
+      ].join('\n'));
+
     // ── 人工 QA 確認通過：qa-pass kpi ────────────────────────────
     } else if (/^qa-pass\s+(kpi|course|survey)/i.test(text)) {
       _handleQaPass(text, replyToken);
@@ -930,6 +953,9 @@ function _handleLineWebhook(events) {
         '新專案 名稱 描述   — Planner 產出計畫草稿',
         '確認計畫 key      — 確認草稿，加入排程',
         '修改計畫 key 說明  — 修改草稿後重新呈現',
+        '',
+        '📊 系統報告（在 Claude Code 觸發）：',
+        '系統報告 — 查看觸發方式說明',
       ];
       if (isSysAdmin) {
         lines.push('');
