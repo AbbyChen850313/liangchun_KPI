@@ -20,16 +20,17 @@ from services.auth_service import (
     require_hr,
     require_sysadmin,
 )
+from base.ports import AccountStorePort
+from plugins.kpi.identity import KpiAccountStore
 from services.bind_config_service import get_bind_config, validate_bind_fields
 from services.line_service import exchange_auth_code, push_message, verify_access_token
-from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
 
-
-def _sheets(is_test: bool = False) -> SheetsService:
-    return SheetsService(is_test=is_test)
+# Plugin mount: swap KpiAccountStore for any AccountStorePort implementation to
+# target a different system without touching the auth routes below.
+_STORE: AccountStorePort = KpiAccountStore()
 
 
 def _session_from_access_token(access_token: str, is_test: bool):
@@ -44,8 +45,7 @@ def _session_from_access_token(access_token: str, is_test: bool):
     line_uid: str = profile["userId"]
     display_name: str = profile.get("displayName", "")
 
-    sheets = _sheets(is_test)
-    account, _ = sheets.find_account_by_uid(line_uid)
+    account, _ = _STORE.find_by_uid(line_uid, is_test)
     if not account:
         bind_token = issue_bind_token(line_uid, display_name)
         return jsonify({"error": "帳號未綁定", "needBind": True, "bindToken": bind_token}), 401
@@ -173,25 +173,21 @@ def bind_account():
     else:
         return jsonify({"error": "缺少 accessToken 或 bindToken"}), 400
 
-    sheets = _sheets(is_test)
-
     # Check if already bound
-    existing, _ = sheets.find_account_by_uid(line_uid)
+    existing, _ = _STORE.find_by_uid(line_uid, is_test)
     if existing:
         return jsonify({"error": "此帳號已綁定，如需重新綁定請聯繫 HR"}), 409
 
-    # Find the account row using name + employeeId (KPI identity fields)
-    name = field_values.get("name", "")
-    employee_id = field_values.get("employeeId", "")
-    account, sheet_row = sheets.find_account_by_identity(name, employee_id)
+    # Delegate identity resolution to the plugin (field semantics are plugin-owned)
+    account, sheet_row = _STORE.find_by_fields(field_values, is_test)
     if not account:
-        return jsonify({"error": "找不到符合的員工資料，請確認姓名與員工編號"}), 404
+        return jsonify({"error": "找不到符合的員工資料，請確認填寫的資料是否正確"}), 404
 
     if account.get("status") == "已授權" and account.get("lineUid"):
         return jsonify({"error": "此員工已被其他帳號綁定，請聯繫 HR"}), 409
 
-    # Write UID into the sheet
-    sheets.bind_account(sheet_row, line_uid, display_name)
+    # Persist binding via plugin
+    _STORE.bind(sheet_row, line_uid, display_name, is_test)
 
     logger.info(
         "AUDIT | route=bind_account | actor=%s(%s) | action=bind | target=%s",
@@ -235,7 +231,7 @@ def refresh_role():
     line_uid: str = g.session["lineUid"]
     is_test: bool = g.session.get("isTest", False)
 
-    account, _ = _sheets(is_test).find_account_by_uid(line_uid)
+    account, _ = _STORE.find_by_uid(line_uid, is_test)
     if not account:
         return jsonify({"error": "帳號未綁定"}), 401
 
@@ -273,7 +269,7 @@ def check_session():
 def get_all_accounts():
     """Return all accounts (HR / SysAdmin only)."""
     is_test = g.session.get("isTest", False)
-    accounts = _sheets(is_test).get_all_accounts()
+    accounts = _STORE.get_all(is_test)
     return jsonify(accounts)
 
 
@@ -293,13 +289,12 @@ def reset_account():
         return jsonify({"error": "缺少 targetLineUid"}), 400
 
     is_test = g.session.get("isTest", False)
-    sheets = _sheets(is_test)
 
-    _, sheet_row = sheets.find_account_by_uid(target_uid)
+    _, sheet_row = _STORE.find_by_uid(target_uid, is_test)
     if sheet_row == -1:
         return jsonify({"error": "找不到該帳號"}), 404
 
-    sheets.unbind_account(sheet_row)
+    _STORE.unbind(sheet_row, is_test)
     logger.info(
         "AUDIT | route=reset_account | actor=%s(%s) | action=unbind | target=%s",
         g.session["name"], g.session["lineUid"], target_uid,
@@ -334,7 +329,7 @@ def bind_check():
         return jsonify({"error": "bindToken 無效或已過期"}), 401
 
     display_name: str = payload.get("displayName", "")
-    in_employee_list = _sheets(is_test).check_name_in_employees(display_name)
+    in_employee_list = _STORE.name_exists(display_name, is_test)
     return jsonify({"inEmployeeList": in_employee_list})
 
 
@@ -352,6 +347,6 @@ def verify_bind_code():
     code = (body.get("code") or "").strip()
     is_test = bool(body.get("isTest", False))
 
-    settings = _sheets(is_test).get_settings()
+    settings = _STORE.get_settings(is_test)
     expected = settings.get("綁定驗證碼", "HR0000")
     return jsonify({"valid": hmac.compare_digest(code, expected)})  # [P2-TIMING-01]
