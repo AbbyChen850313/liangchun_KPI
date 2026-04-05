@@ -9,7 +9,7 @@ import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow, AnnualAdjustRow } from "../types";
 
-type Tab = "progress" | "settings" | "employees" | "batch" | "comparison" | "annual";
+type Tab = "progress" | "settings" | "employees" | "batch" | "comparison" | "annual" | "push";
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Admin() {
       </div>
 
       <div className="tab-bar">
-        {(["progress", "settings", "employees", "batch", "comparison", "annual"] as Tab[]).map((t) => (
+        {(["progress", "settings", "employees", "batch", "comparison", "annual", "push"] as Tab[]).map((t) => (
           <button
             key={t}
             className={`tab-btn${tab === t ? " active" : ""}`}
@@ -42,6 +42,7 @@ export default function Admin() {
       {tab === "batch" && <BatchScoringTab />}
       {tab === "comparison" && <ScoreComparisonTab />}
       {tab === "annual" && <AnnualAdjustTab />}
+      {tab === "push" && <PushWizardTab />}
     </div>
   );
 }
@@ -95,6 +96,8 @@ function SettingsTab() {
     "試用期天數",
     "最低評分天數",
     "綁定驗證碼",
+    "通知時間點1",
+    "通知時間點2",
   ];
 
   function showToast(msg: string) {
@@ -310,8 +313,133 @@ function EmployeesTab() {
   );
 }
 
+// ── Push Wizard tab ───────────────────────────────────────────────────────
+
+function PushWizardTab() {
+  const { data, loading, error, refetch } = useApi<Settings>(
+    () => api.get("/api/admin/settings").then((r) => r.data)
+  );
+  const [notify1, setNotify1] = useState("");
+  const [notify2, setNotify2] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [toast, setToast] = useState("");
+
+  // Sync local state from fetched settings once
+  const notify1Value = notify1 !== "" ? notify1 : (data?.["通知時間點1"] ?? "");
+  const notify2Value = notify2 !== "" ? notify2 : (data?.["通知時間點2"] ?? "");
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  }
+
+  async function handleSaveDates() {
+    setSaving(true);
+    try {
+      await api.post("/api/admin/settings", {
+        ...(notify1 !== "" ? { "通知時間點1": notify1 } : {}),
+        ...(notify2 !== "" ? { "通知時間點2": notify2 } : {}),
+      });
+      showToast("✅ 通知日期已儲存");
+      setNotify1("");
+      setNotify2("");
+      refetch();
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTriggerNow(isTest: boolean) {
+    setTriggering(true);
+    try {
+      const { data: res } = await api.post("/api/admin/trigger-reminder", { isTest });
+      showToast(`✅ 已發送提醒給 ${res.notifiedCount} 位主管`);
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    } finally {
+      setTriggering(false);
+    }
+  }
+
+  if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
+  if (error) return <div className="error-page">{error}</div>;
+
+  const hasDirty = notify1 !== "" || notify2 !== "";
+
+  return (
+    <div className="admin-section">
+      <h3>推播精靈</h3>
+      <p style={{ fontSize: 13, color: "#666", marginBottom: 16 }}>
+        設定定時提醒日期，或立即手動發送 LINE 通知給尚未完成評分的主管。
+      </p>
+
+      {/* ── Scheduled dates ── */}
+      <div style={{ background: "#f9f9f9", borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <div style={{ fontWeight: 600, marginBottom: 12 }}>定時通知設定</div>
+        <div className="setting-row">
+          <label>通知時間點1</label>
+          <input
+            type="date"
+            value={notify1Value}
+            onChange={(e) => setNotify1(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </div>
+        <div className="setting-row">
+          <label>通知時間點2</label>
+          <input
+            type="date"
+            value={notify2Value}
+            onChange={(e) => setNotify2(e.target.value)}
+            style={{ padding: "6px 8px", fontSize: 14 }}
+          />
+        </div>
+        <button
+          className="btn-primary"
+          onClick={handleSaveDates}
+          disabled={saving || !hasDirty}
+          style={{ marginTop: 8 }}
+        >
+          {saving ? "儲存中…" : "儲存日期設定"}
+        </button>
+      </div>
+
+      {/* ── Manual trigger ── */}
+      <div style={{ background: "#f9f9f9", borderRadius: 8, padding: 16 }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>立即手動發送</div>
+        <p style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>
+          向所有尚未完成評分的主管發送 LINE Flex Message 提醒。
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            className="btn-secondary"
+            onClick={() => handleTriggerNow(true)}
+            disabled={triggering}
+            style={{ flex: 1, fontSize: 13 }}
+          >
+            {triggering ? "發送中…" : "🧪 測試發送"}
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => handleTriggerNow(false)}
+            disabled={triggering}
+            style={{ flex: 1, fontSize: 13 }}
+          >
+            {triggering ? "發送中…" : "📣 正式發送"}
+          </button>
+        </div>
+      </div>
+
+      {toast && <div className="toast show">{toast}</div>}
+    </div>
+  );
+}
+
 function tabLabel(t: Tab): string {
-  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分", comparison: "雙評比較", annual: "年度調整" }[t]!;
+  return { progress: "評分進度", settings: "系統設定", employees: "員工名單", batch: "批量評分", comparison: "雙評比較", annual: "年度調整", push: "推播精靈" }[t]!;
 }
 
 // ── Score Comparison tab ──────────────────────────────────────────────────

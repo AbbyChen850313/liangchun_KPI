@@ -117,3 +117,16 @@ def jwt_secret() -> str:
         "JWT_SECRET must be at least 32 characters for HS256 security."
     )
     return secret
+
+
+def gas_webhook_secret() -> str:
+    """Return the GAS Webhook notification secret from Secret Manager.  # [P0-SECRET-01]
+    The plain-text .notify_secret file must never be committed; always
+    read this value via Secret Manager (or GAS_WEBHOOK_SECRET env var).
+    """
+    return _get_secret("GAS_WEBHOOK_SECRET")
+
+
+def gas_web_app_url() -> str:
+    """Return the GAS web app deployment URL (for trigger-reminder calls)."""
+    return _get_secret("GAS_WEB_APP_URL")
