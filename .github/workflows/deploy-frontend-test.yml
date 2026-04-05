@@ -30,7 +30,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: https://kaohe-backend-test-6cfy7zdzmq-de.a.run.app
-          VITE_LIFF_ID: 2009619528-aJO34c6u
+          VITE_LIFF_ID_TEST: 2009619528-aJO34c6u
           VITE_IS_TEST: "true"
         run: npm run build
 
