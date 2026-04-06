@@ -163,7 +163,7 @@ def _build_stubs() -> None:
 _build_stubs()
 
 # ── Environment variables ──────────────────────────────────────────────────
-os.environ.setdefault("JWT_SECRET", "test-secret-for-pytest")
+os.environ["JWT_SECRET"] = "test-secret-for-pytest-min32chars!!"
 os.environ.setdefault("GCP_SA_KEY", json.dumps({
     "type": "service_account",
     "project_id": "test",
@@ -205,6 +205,7 @@ def _manager_token() -> str:
         name=MANAGER_NAME,
         role="主管",
         is_test=True,
+        responsibilities=[{"section": SECTION, "lineUid": MANAGER_UID, "weight": 0.6}],
     )
 
 

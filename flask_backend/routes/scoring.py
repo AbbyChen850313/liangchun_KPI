@@ -14,6 +14,10 @@ from extensions import limiter
 from services.audit_service import write_audit_log
 from services.auth_service import require_auth, require_hr, require_manager
 from services.scoring_service import (
+    NOTE_MAX_LENGTH,
+    SCORE_DIFF_ALERT_THRESHOLD,
+    SPECIAL_SCORE_MAX,
+    SPECIAL_SCORE_MIN,
     aggregate_annual_scores,
     annual_quarters,
     build_score_record,
@@ -71,10 +75,12 @@ def _upsert_score(status: str):
     emp_name = (body.get("empName") or "").strip()
     section = (body.get("section") or "").strip()
     scores_raw: dict = body.get("scores") or {}
-    special_raw = float(body.get("special") or 0)
-    if not (-20 <= special_raw <= 20):
+    try:
+        special_raw = float(body.get("special") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "special 必須是數字"}), 400
+    if not (SPECIAL_SCORE_MIN <= special_raw <= SPECIAL_SCORE_MAX):
         return jsonify({"error": "special 加減分必須在 -20 到 20 之間"}), 400
-    special = special_raw
     note = (body.get("note") or "").strip()
     quarter = (body.get("quarter") or "").strip()
 
@@ -82,7 +88,7 @@ def _upsert_score(status: str):
         return jsonify({"error": "缺少員工姓名或科別"}), 400
 
     # [P0] Limit note length to prevent unbounded storage and XSS surface
-    if len(note) > 500:
+    if len(note) > NOTE_MAX_LENGTH:
         return jsonify({"error": "備註不可超過 500 字"}), 400
 
     sheets = _sheets(is_test)
@@ -101,8 +107,8 @@ def _upsert_score(status: str):
         if missing:
             return jsonify({"error": f"評分項目未填完：{', '.join(missing)}"}), 400
 
-    # Get weight and build record (DIP: delegated to pure function)
-    responsibilities = sheets.get_manager_responsibilities()
+    # Get weight and build record — use JWT-cached responsibilities to avoid live Sheets read
+    responsibilities = g.session.get("responsibilities", [])
 
     # [P0-1] Validate section is within manager's assigned responsibilities
     manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
@@ -123,7 +129,7 @@ def _upsert_score(status: str):
 
     score_data = build_score_record(
         manager_name, line_uid, emp_name, section,
-        scores_raw, special, note, quarter,
+        scores_raw, special_raw, note, quarter,
         responsibilities, status=status,
     )
 
@@ -184,11 +190,11 @@ def get_my_scores():
         s["empName"]: s
         for s in sheets.get_all_self_scores(quarter)
     }
-    result = {}
+    score_by_emp_name = {}
     for s in scores:
         emp_name = s["empName"]
         self_rec = self_score_map.get(emp_name)
-        result[emp_name] = {
+        score_by_emp_name[emp_name] = {
             "scores": s["scores"],
             "special": s["special"],
             "note": s["note"],
@@ -196,7 +202,7 @@ def get_my_scores():
             "selfScores": self_rec["scores"] if self_rec else None,
             "selfRawScore": self_rec["rawScore"] if self_rec else None,
         }
-    return jsonify(result)
+    return jsonify(score_by_emp_name)
 
 
 # ── GET /api/scoring/all-status ────────────────────────────────────────────
@@ -503,18 +509,22 @@ def manager_batch_submit():
         emp_name = (entry.get("empName") or "").strip()
         section = (entry.get("section") or "").strip()
         scores_raw: dict = entry.get("scores") or {}
-        special_raw = float(entry.get("special") or 0)
+        try:
+            special_raw = float(entry.get("special") or 0)
+        except (ValueError, TypeError):
+            failed.append({"empName": emp_name or "?", "error": "special 必須是數字"})
+            continue
         note = (entry.get("note") or "").strip()
 
         if not emp_name or not section:
             failed.append({"empName": emp_name or "?", "error": "缺少必要欄位"})
             continue
 
-        if not (-20 <= special_raw <= 20):
+        if not (SPECIAL_SCORE_MIN <= special_raw <= SPECIAL_SCORE_MAX):
             failed.append({"empName": emp_name, "error": "special 加減分必須在 -20 到 20 之間"})
             continue
 
-        if len(note) > 500:
+        if len(note) > NOTE_MAX_LENGTH:
             failed.append({"empName": emp_name, "error": "備註不可超過 500 字"})
             continue
 
@@ -545,9 +555,11 @@ def manager_batch_submit():
             )
             sheets.upsert_score(record)
             submitted += 1
-        except Exception as exc:
-            logger.exception("manager_batch_submit failed: %s/%s", manager_name, emp_name)
+        except ValueError as exc:
             failed.append({"empName": emp_name, "error": str(exc)})
+        except Exception:
+            logger.exception("manager_batch_submit failed: %s/%s", manager_name, emp_name)
+            failed.append({"empName": emp_name, "error": "系統處理錯誤，請聯繫管理員"})
 
     logger.info(
         "AUDIT | route=manager_batch_submit | actor=%s(%s) | action=manager_batch_submit"
@@ -589,7 +601,7 @@ def draft_self_score():
     note = (body.get("note") or "").strip()
     quarter = (body.get("quarter") or "").strip()
 
-    if len(note) > 500:
+    if len(note) > NOTE_MAX_LENGTH:
         return jsonify({"error": "備註不可超過 500 字"}), 400
 
     sheets = _sheets(is_test)
@@ -604,7 +616,9 @@ def draft_self_score():
 
     all_employees = sheets.get_all_employees()
     emp = next((e for e in all_employees if e["name"] == emp_name), None)
-    section = emp["section"] if emp else ""
+    if not emp:
+        return jsonify({"error": "找不到員工資料，請聯繫 HR"}), 404
+    section = emp["section"]
 
     raw_score = sheets.upsert_self_score(quarter, emp_name, section, scores_raw, note, status="草稿")
     return jsonify({"success": True, "rawScore": raw_score})
@@ -625,7 +639,7 @@ def submit_self_score():
     note = (body.get("note") or "").strip()
     quarter = (body.get("quarter") or "").strip()
 
-    if len(note) > 500:
+    if len(note) > NOTE_MAX_LENGTH:
         return jsonify({"error": "備註不可超過 500 字"}), 400
 
     missing = [f"item{i}" for i in range(1, 7) if not scores_raw.get(f"item{i}")]
@@ -644,7 +658,9 @@ def submit_self_score():
 
     all_employees = sheets.get_all_employees()
     emp = next((e for e in all_employees if e["name"] == emp_name), None)
-    section = emp["section"] if emp else ""
+    if not emp:
+        return jsonify({"error": "找不到員工資料，請聯繫 HR"}), 404
+    section = emp["section"]
 
     raw_score = sheets.upsert_self_score(quarter, emp_name, section, scores_raw, note)
     return jsonify({"success": True, "rawScore": raw_score})

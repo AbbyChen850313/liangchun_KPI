@@ -38,12 +38,14 @@ def issue_session_token(
     name: str,
     role: str,
     is_test: bool,
+    responsibilities: list | None = None,
 ) -> str:
     payload = {
         "lineUid": line_uid,
         "name": name,
         "role": role,
         "isTest": is_test,
+        "responsibilities": responsibilities or [],
         "exp": datetime.now(tz=timezone.utc) + timedelta(hours=_TOKEN_TTL_HOURS),
     }
     return jwt.encode(payload, config.jwt_secret(), algorithm=_ALGORITHM)

@@ -103,6 +103,18 @@ def _build_gspread_stub():
 
     _fake_scores_ws = _FakeWorksheetScores()
 
+    class _FakeWorksheetAccounts(_FakeWorksheet):
+        """LINE帳號 sheet: test-uid-001 → 已授權 系統管理員"""
+        def get_all_values(self):
+            # Columns: name(0) lineUid(1) displayName(2) boundAt(3) status(4)
+            #          jobTitle(5) phone(6) role(7) clearFlag(8) testUid(9) employeeId(10)
+            return [
+                ["name", "lineUid", "displayName", "boundAt", "status",
+                 "jobTitle", "phone", "role", "clearFlag", "testUid", "employeeId"],
+                ["測試用戶", "Lprod_test", "測試用戶", "2024-01-01", "已授權",
+                 "系統管理員", "", "系統管理員", "", "test-uid-001", "T001"],
+            ]
+
     class _FakeSpreadsheet:
         def worksheet(self, name):
             if name == "主管權重":
@@ -111,6 +123,8 @@ def _build_gspread_stub():
                 return _FakeWorksheetEmployees()
             if name == "評分記錄":
                 return _fake_scores_ws
+            if name == "LINE帳號":
+                return _FakeWorksheetAccounts()
             return _FakeWorksheet()
 
     class _FakeClient:
@@ -453,6 +467,7 @@ def _manager_header() -> dict:
         name="張主管",
         role="主管",
         is_test=True,
+        responsibilities=[{"section": "人事科", "lineUid": "Umgr1", "weight": 0.6}],
     )
     return {"Authorization": f"Bearer {token}"}
 

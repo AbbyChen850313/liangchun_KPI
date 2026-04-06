@@ -24,6 +24,7 @@ from base.ports import AccountStorePort
 from plugins.kpi.identity import KpiAccountStore
 from services.bind_config_service import get_bind_config, validate_bind_fields
 from services.line_service import exchange_auth_code, push_message, verify_access_token
+from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint("auth", __name__)
@@ -52,16 +53,27 @@ def _session_from_access_token(access_token: str, is_test: bool):
     if account.get("status") != "已授權":
         return jsonify({"error": "帳號尚未授權，請聯繫 HR"}), 403
 
+    role = account.get("role", "同仁")
+    responsibilities = []
+    if role in ("主管", "系統管理員"):
+        try:
+            all_resp = SheetsService(is_test=is_test).get_manager_responsibilities()
+            responsibilities = [r for r in all_resp if r["lineUid"] == line_uid]
+        except Exception:
+            logger.warning(
+                "_session_from_access_token: failed to fetch responsibilities for %s", line_uid
+            )
     token = issue_session_token(
         line_uid=line_uid,
         name=account["name"],
-        role=account.get("role", "同仁"),
+        role=role,
         is_test=is_test,
+        responsibilities=responsibilities,
     )
     return jsonify({
         "token": token,
         "name": account["name"],
-        "role": account.get("role", "同仁"),
+        "role": role,
         "jobTitle": account.get("jobTitle", ""),
     })
 
@@ -224,6 +236,7 @@ def bind_account():
 # ── POST /api/auth/refresh-role ────────────────────────────────────────────
 
 @auth_bp.route("/refresh-role", methods=["POST"])
+@limiter.limit("30/minute")
 @require_auth
 def refresh_role():
     """Re-issue JWT with latest role from Sheets/Firestore.
@@ -236,16 +249,25 @@ def refresh_role():
     if not account:
         return jsonify({"error": "帳號未綁定"}), 401
 
+    role = account.get("role", "同仁")
+    responsibilities = []
+    if role in ("主管", "系統管理員"):
+        try:
+            all_resp = SheetsService(is_test=is_test).get_manager_responsibilities()
+            responsibilities = [r for r in all_resp if r["lineUid"] == line_uid]
+        except Exception:
+            logger.warning("refresh_role: failed to fetch responsibilities for %s", line_uid)
     token = issue_session_token(
         line_uid=line_uid,
         name=account["name"],
-        role=account.get("role", "同仁"),
+        role=role,
         is_test=is_test,
+        responsibilities=responsibilities,
     )
     return jsonify({
         "token": token,
         "name": account["name"],
-        "role": account.get("role", "同仁"),
+        "role": role,
     })
 
 
@@ -255,11 +277,20 @@ def refresh_role():
 @require_auth
 def check_session():
     """Return current session info (used on app load to validate stored token)."""
+    is_test: bool = g.session.get("isTest", False)
+    line_uid: str = g.session["lineUid"]
+
+    account, _ = _STORE.find_by_uid(line_uid, is_test)
+    if not account:
+        return jsonify({"error": "帳號未綁定", "needBind": True}), 401
+    if account.get("status") != "已授權":
+        return jsonify({"error": "帳號尚未授權，請聯繫 HR"}), 403
+
     return jsonify({
         "bound": True,
         "name": g.session["name"],
         "role": g.session["role"],
-        "isTest": g.session["isTest"],
+        "isTest": is_test,
     })
 
 
@@ -381,5 +412,7 @@ def verify_bind_code():
     is_test = bool(body.get("isTest", False))
 
     settings = _STORE.get_settings(is_test)
-    expected = settings.get("綁定驗證碼", "HR0000")
+    if "綁定驗證碼" not in settings:
+        return jsonify({"error": "系統設定錯誤"}), 500
+    expected = settings["綁定驗證碼"]
     return jsonify({"valid": hmac.compare_digest(code, expected)})  # [P2-TIMING-01]

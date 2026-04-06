@@ -11,16 +11,33 @@ from datetime import datetime
 
 _GRADE_SCORES: dict[str, float] = {"甲": 95, "乙": 85, "丙": 65, "丁": 35}
 
+# Grade cutoff thresholds per spec: 甲≥90, 乙≥75, 丙≥60, 丁<60
+_GRADE_CUTOFF_JIA: int = 90
+_GRADE_CUTOFF_YI: int = 75
+_GRADE_CUTOFF_BING: int = 60
+
+# Business rule constants — source of truth for validation across routes
+SPECIAL_SCORE_MIN: float = -20.0   # 主管/HR 加減分下限
+SPECIAL_SCORE_MAX: float = 20.0    # 主管/HR 加減分上限
+NOTE_MAX_LENGTH: int = 500          # 備註字數上限（防止無限制儲存與 XSS 面積）
+SCORE_DIFF_ALERT_THRESHOLD: int = 15  # |主管原始分 - 自評原始分| 超此值則警示
+
 
 def grade_to_score(value: str | float) -> float | None:
     """Convert a grade string ('甲'/'乙'/'丙'/'丁') or numeric string to float."""
     if isinstance(value, (int, float)):
-        return float(value)
+        score = float(value)
+        if not (0 <= score <= 100):
+            return None
+        return score
     mapped = _GRADE_SCORES.get(str(value).strip())
     if mapped is not None:
         return mapped
     try:
-        return float(value)
+        score = float(value)
+        if not (0 <= score <= 100):
+            return None
+        return score
     except (ValueError, TypeError):
         return None
 
@@ -46,23 +63,23 @@ def calc_weighted_score(final_score: float, weight: float) -> float:
 
 
 def score_grade(score: float) -> str:
-    if score >= 90:
+    if score >= _GRADE_CUTOFF_JIA:
         return "甲等"
-    if score >= 75:
+    if score >= _GRADE_CUTOFF_YI:
         return "乙等"
-    if score >= 60:
+    if score >= _GRADE_CUTOFF_BING:
         return "丙等"
     return "丁等"
 
 
 def calc_all(scores: dict, special: float, weight: float) -> dict:
-    raw = calc_raw_score(scores)
-    final = calc_final_score(raw, special)
-    weighted = calc_weighted_score(final, weight)
+    raw_score = calc_raw_score(scores)
+    final_score = calc_final_score(raw_score, special)
+    weighted_score = calc_weighted_score(final_score, weight)
     return {
-        "rawScore": raw,
-        "finalScore": final,
-        "weightedScore": weighted,
+        "rawScore": raw_score,
+        "finalScore": final_score,
+        "weightedScore": weighted_score,
     }
 
 
@@ -123,7 +140,8 @@ def aggregate_annual_scores(
     """
     result = {}
     for emp_name, q_scores in scores_by_emp.items():
-        completed = {q: v for q, v in q_scores.items() if v is not None}
+        q_scores_snapshot = dict(q_scores)
+        completed = {q: v for q, v in q_scores_snapshot.items() if v is not None}
         count = len(completed)
         quarter_sum = sum(completed.values())
         result[emp_name] = {
@@ -193,7 +211,10 @@ def quarter_to_description(quarter: str) -> str:
     if not quarter or len(quarter) < 5:
         return quarter or ""
     roc_year = quarter[:3]
-    q = int(quarter[4])
+    try:
+        q = int(quarter[4])
+    except (ValueError, IndexError):
+        return quarter
     ranges = {1: "1~3月", 2: "4~6月", 3: "7~9月", 4: "10~12月"}
     return f"{roc_year}/{ranges.get(q, '')}"
 
