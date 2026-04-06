@@ -10,7 +10,7 @@ google-cloud-secret-manager==2.22.0
 firebase-admin==6.7.0
 
 # LINE
-line-bot-sdk==3.13.0
+line-bot-sdk==3.22.0
 
 # Auth
 PyJWT==2.12.0
