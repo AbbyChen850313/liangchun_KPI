@@ -334,6 +334,38 @@ def bind_check():
     return jsonify({"inEmployeeList": in_employee_list})
 
 
+# ── POST /api/auth/test-session ───────────────────────────────────────────
+# 測試環境專用 — 讓 Playwright 跳過 LINE 驗證取得合法 JWT
+
+@auth_bp.route("/test-session", methods=["POST"])
+def create_test_session():
+    """
+    Issue a session JWT without LINE access token verification.
+    **TEST ENVIRONMENT ONLY** — returns 404 in production (K_SERVICE set).
+
+    Body: { "role": "同仁"|"主管"|"HR", "name": str, "empId": str }
+    """
+    if config.IS_PRODUCTION:
+        return jsonify({"error": "Not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    role: str = (body.get("role") or "").strip()
+    name: str = (body.get("name") or "").strip()
+    emp_id: str = (body.get("empId") or "").strip()
+
+    _VALID_ROLES = ("同仁", "主管", "HR")
+    if role not in _VALID_ROLES:
+        return jsonify({"error": f"role 必須是 {_VALID_ROLES} 之一"}), 400
+    if not name:
+        return jsonify({"error": "缺少 name"}), 400
+    if not emp_id:
+        return jsonify({"error": "缺少 empId"}), 400
+
+    line_uid = f"TEST_{emp_id}"
+    token = issue_session_token(line_uid=line_uid, name=name, role=role, is_test=True)
+    return jsonify({"token": token, "name": name, "role": role})
+
+
 # ── POST /api/auth/verify-code ─────────────────────────────────────────────
 
 @auth_bp.route("/verify-code", methods=["POST"])
