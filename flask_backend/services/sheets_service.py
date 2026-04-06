@@ -183,6 +183,39 @@ class SheetsService:
     def worksheet(self, name: str) -> gspread.Worksheet:
         return self._ss().worksheet(name)
 
+    # ── Schema validation (called at app startup) ──────────────────────────
+
+    def validate_sheet_headers(self) -> None:
+        """Validate that key worksheets have at least the expected column count.
+
+        Raises RuntimeError if a sheet has fewer columns than expected,
+        indicating columns were deleted or the sheet was restructured.
+        Logs a warning (and continues) if the sheet cannot be reached.
+        """
+        _REQUIRED_COL_COUNTS = {
+            "LINE帳號": len(_COL_ACCOUNT),      # 11
+            "主管權重": len(_COL_WEIGHT),        # 6
+            "評分記錄": len(_COL_SCORE),         # 18
+            "年度調整": len(_COL_ANNUAL_ADJ),    # 5
+        }
+        for sheet_name, min_cols in _REQUIRED_COL_COUNTS.items():
+            try:
+                ws = self.worksheet(sheet_name)
+                headers = ws.row_values(1)
+            except Exception as exc:
+                logger.warning(
+                    "validate_sheet_headers: cannot read '%s' — skipping (%s)",
+                    sheet_name, exc,
+                )
+                continue
+            if len(headers) < min_cols:
+                raise RuntimeError(
+                    f"Sheet '{sheet_name}' header has {len(headers)} columns, "
+                    f"expected at least {min_cols}. "
+                    "A column may have been deleted or the sheet was restructured."
+                )
+        logger.info("validate_sheet_headers: all key sheets OK (is_test=%s)", self.is_test)
+
     # ── Settings (系統設定) ────────────────────────────────────────────────
 
     def get_settings(self) -> dict[str, str]:
@@ -550,7 +583,7 @@ class SheetsService:
                             f"duplicate_submission:{score_data.get('empName')}"
                         )
                     return  # 已送出記錄不允許被草稿覆寫
-                _with_retry(lambda: ws.update(
+                _with_retry(lambda i=i, score_row=score_row: ws.update(
                     f"A{i}:R{i}",
                     [score_row],
                     value_input_option="USER_ENTERED",

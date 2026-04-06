@@ -17,7 +17,19 @@ import config
 from extensions import limiter
 from services.audit_service import write_audit_log
 from services.auth_service import require_hr, require_sysadmin
-from services.scoring_service import aggregate_annual_scores, annual_quarters, build_score_record, current_quarter as _current_quarter
+from services.scoring_service import (
+    NOTE_MAX_LENGTH,
+    SCORE_DIFF_ALERT_THRESHOLD,
+    SPECIAL_SCORE_MAX,
+    SPECIAL_SCORE_MIN,
+    _GRADE_CUTOFF_BING,
+    _GRADE_CUTOFF_JIA,
+    _GRADE_CUTOFF_YI,
+    aggregate_annual_scores,
+    annual_quarters,
+    build_score_record,
+    current_quarter as _current_quarter,
+)
 from services.sheets_service import SheetsService
 
 logger = logging.getLogger(__name__)
@@ -43,11 +55,11 @@ def _csv_safe(value) -> str:
 
 def _annual_grade(score: float) -> str:
     """Map final annual score to grade label per CLAUDE.md: 甲≥90, 乙≥75, 丙≥60, 丁<60."""
-    if score >= 90:
+    if score >= _GRADE_CUTOFF_JIA:
         return "甲"
-    if score >= 75:
+    if score >= _GRADE_CUTOFF_YI:
         return "乙"
-    if score >= 60:
+    if score >= _GRADE_CUTOFF_BING:
         return "丙"
     return "丁"
 
@@ -221,7 +233,11 @@ def batch_submit_scores():
         emp_name = (entry.get("empName") or "").strip()
         section = (entry.get("section") or "").strip()
         scores_raw: dict = entry.get("scores") or {}
-        special_raw = float(entry.get("special") or 0)
+        try:
+            special_raw = float(entry.get("special") or 0)
+        except (ValueError, TypeError):
+            failed.append({"empName": emp_name or "?", "error": "special 必須是數字"})
+            continue
         note = (entry.get("note") or "").strip()
 
         if not manager_name or not emp_name or not section:
@@ -229,13 +245,12 @@ def batch_submit_scores():
             continue
 
         # [P1] Enforce special score range to prevent abnormal bonus manipulation
-        if not (-20 <= special_raw <= 20):
+        if not (SPECIAL_SCORE_MIN <= special_raw <= SPECIAL_SCORE_MAX):
             failed.append({"empName": emp_name, "error": "special 加減分必須在 -20 到 20 之間"})
             continue
-        special = special_raw
 
         # [P0] Enforce note length limit per entry
-        if len(note) > 500:
+        if len(note) > NOTE_MAX_LENGTH:
             failed.append({"empName": emp_name, "error": "備註不可超過 500 字"})
             continue
 
@@ -253,13 +268,15 @@ def batch_submit_scores():
         try:
             record = build_score_record(
                 manager_name, manager_uid, emp_name, section,
-                scores_raw, special, note, quarter, responsibilities,
+                scores_raw, special_raw, note, quarter, responsibilities,
             )
             sheets.upsert_score(record)
             submitted += 1
-        except Exception as exc:
-            logger.exception("batch_submit failed: %s/%s", manager_name, emp_name)
+        except ValueError as exc:
             failed.append({"empName": emp_name, "error": str(exc)})
+        except Exception:
+            logger.exception("batch_submit failed: %s/%s", manager_name, emp_name)
+            failed.append({"empName": emp_name, "error": "系統處理錯誤，請聯繫管理員"})
 
     logger.info(
         "AUDIT | route=batch_submit_scores | actor=%s(%s) | action=batch_submit"
@@ -479,9 +496,9 @@ def set_annual_adjust():
     except (ValueError, TypeError):
         return jsonify({"error": "special 必須是數字"}), 400
 
-    if not (-20 <= special <= 20):
+    if not (SPECIAL_SCORE_MIN <= special <= SPECIAL_SCORE_MAX):
         return jsonify({"error": "年度加減分必須在 -20 到 20 之間"}), 400
-    if len(note) > 500:
+    if len(note) > NOTE_MAX_LENGTH:
         return jsonify({"error": "備註不可超過 500 字"}), 400
 
     _sheets(is_test).upsert_annual_adjustment(year, emp_name, special, note)
@@ -543,7 +560,7 @@ def get_score_comparison():
             "managerRawScore": manager_raw,
             "selfRawScore": self_raw,
             "diff": diff,
-            "flagged": diff is not None and abs(diff) >= 15,
+            "flagged": diff is not None and abs(diff) >= SCORE_DIFF_ALERT_THRESHOLD,
         })
 
     return jsonify({"quarter": quarter, "rows": rows})

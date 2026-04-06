@@ -13,6 +13,7 @@ from flask_cors import CORS
 
 import config
 from extensions import limiter
+from services.sheets_service import SheetsService
 
 
 def create_app() -> Flask:
@@ -33,6 +34,16 @@ def create_app() -> Flask:
 
     # ── Rate limiter ───────────────────────────────────────────────────────
     limiter.init_app(app)
+
+    # ── Sheet schema validation ────────────────────────────────────────────
+    try:
+        SheetsService(is_test=False).validate_sheet_headers()
+    except RuntimeError:
+        raise  # Mismatched headers → block startup
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Sheet header validation skipped (credentials unavailable?): %s", exc
+        )
 
     # ── Blueprints ─────────────────────────────────────────────────────────
     from routes.auth import auth_bp
