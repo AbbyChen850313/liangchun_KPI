@@ -20,3 +20,6 @@ python-dateutil==2.9.0
 requests==2.33.0
 
 # Note: aiohttp version pinned by line-bot-sdk; do not override
+
+# Testing
+pytest==8.3.4
