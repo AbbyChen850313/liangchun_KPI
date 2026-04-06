@@ -10,6 +10,7 @@ import os
 import gspread
 from flask import Flask, jsonify
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 import config
 from extensions import limiter
@@ -18,6 +19,7 @@ from services.sheets_service import SheetsService
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
     # ── Logging ────────────────────────────────────────────────────────────
     logging.basicConfig(
