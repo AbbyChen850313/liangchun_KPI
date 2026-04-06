@@ -411,7 +411,9 @@ class SheetsService:
         prefix = "test_" if self.is_test else ""
         collection_name = f"{prefix}employees"
 
-        updated = 0
+        batch = db.batch()
+        batch_count = 0
+        total_updated = 0
         for emp in employees:
             emp_id = emp.get("empId") or emp.get("employeeId")
             if not emp_id:
@@ -424,14 +426,24 @@ class SheetsService:
                 "joinDate": emp.get("joinDate", ""),
                 "leaveDate": emp.get("leaveDate", ""),
             }
-            db.collection(collection_name).document(emp_id).set(doc_data, merge=True)
-            updated += 1
+            doc_ref = db.collection(collection_name).document(emp_id)
+            batch.set(doc_ref, doc_data, merge=True)
+            batch_count += 1
+            if batch_count == 500:
+                batch.commit()
+                total_updated += batch_count
+                batch = db.batch()
+                batch_count = 0
+
+        if batch_count > 0:
+            batch.commit()
+            total_updated += batch_count
 
         logger.info(
             "_sync_employees_to_firestore: upserted %d employees (env=%s)",
-            updated, collection_name,
+            total_updated, collection_name,
         )
-        return updated
+        return total_updated
 
     # ── Manager weights (主管權重) ─────────────────────────────────────────
 
