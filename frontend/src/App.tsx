@@ -13,7 +13,7 @@ import "./styles.css";
 
 /** Routes that require LINE authentication */
 function AuthenticatedRoutes() {
-  const { ready, needBind, error } = useLiff();
+  const { ready, needBind, error, role } = useLiff();
 
   if (needBind) {
     return <Navigate to="/bind" replace />;
@@ -50,7 +50,7 @@ function AuthenticatedRoutes() {
       <Route path="/admin" element={<Admin />} />
       <Route path="/manager-batch" element={<ManagerBatch />} />
       <Route path="/sysadmin" element={<SysAdmin />} />
-      <Route path="/diary" element={<WorkDiary />} />
+      <Route path="/diary" element={<WorkDiary role={role ?? ""} />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -16,31 +16,16 @@ import {
   apiGetMyLogs,
   apiUpdateLog,
 } from "../services/api";
-import { SESSION_KEY } from "../services/authRefresh";
 import type { WorkLog } from "../types";
 
 type ManagerRole = "主管" | "HR" | "系統管理員";
-
-function decodeRole(): string {
-  const token = localStorage.getItem(SESSION_KEY);
-  if (!token) return "";
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return "";
-    const payload = JSON.parse(atob(parts[1]));
-    return payload.role ?? "";
-  } catch {
-    return "";
-  }
-}
 
 function isManagerRole(role: string): role is ManagerRole {
   return role === "主管" || role === "HR" || role === "系統管理員";
 }
 
-export default function WorkDiary() {
+export default function WorkDiary({ role }: { role: string }) {
   const navigate = useNavigate();
-  const role = decodeRole();
   const [activeTab, setActiveTab] = useState<"my" | "employee">("my");
 
   return (
