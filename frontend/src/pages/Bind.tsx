@@ -53,8 +53,8 @@ export default function Bind() {
         setBindConfig(data);
         if (!data.useVerifyCode) setStep("identity");
       })
-      .catch(() => {
-        // Keep defaults on error
+      .catch((e: any) => {
+        console.warn("[Bind] fetch bind-fields failed, using defaults:", e?.message);
       });
 
     const storedToken = sessionStorage.getItem("line_bind_token");
@@ -67,7 +67,9 @@ export default function Bind() {
       .then(({ data }) => {
         if (data.inEmployeeList) setStep("identity");
       })
-      .catch(() => {});
+      .catch((e: any) => {
+        console.warn("[Bind] bind-check failed:", e?.message);
+      });
   }, []);
 
   function setField(key: string, value: string) {
@@ -75,6 +77,7 @@ export default function Bind() {
   }
 
   async function handleVerifyCode() {
+    if (loading) return; // Prevent double-submit
     setError("");
     setLoading(true);
     try {
@@ -95,6 +98,7 @@ export default function Bind() {
   }
 
   async function handleBind() {
+    if (loading) return; // Prevent double-submit
     setError("");
 
     for (const field of bindConfig.fields) {

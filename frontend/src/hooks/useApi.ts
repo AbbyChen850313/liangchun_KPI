@@ -27,6 +27,10 @@ export function useApi<T>(
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
+  // Serialise deps to a stable primitive so useCallback does not recreate on
+  // every render when the caller passes an inline array (e.g. [tab]).
+  const depKey = deps.map(String).join("\x00");
+
   const run = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -38,8 +42,8 @@ export function useApi<T>(
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey]);
 
   useEffect(() => {
     run();

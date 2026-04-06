@@ -176,6 +176,14 @@ export function useLiff(): LiffState {
 
           loginAttemptedRef.current = true;
           sessionStorage.setItem(LIFF_LOGIN_ATTEMPTED_KEY, "1");
+          // Safety net: if LINE server is unresponsive and the page never navigates
+          // away within 10 s, clear the flag and surface a timeout error so the user
+          // can retry instead of staring at a frozen screen indefinitely.
+          setTimeout(() => {
+            sessionStorage.removeItem(LIFF_LOGIN_ATTEMPTED_KEY);
+            loginAttemptedRef.current = false;
+            setState((prev) => ({ ...prev, error: "LINE 登入逾時，請重新整理頁面" }));
+          }, 10_000);
           liffAdapter.login(); // navigates away; no further code runs
           return;
         }
@@ -195,23 +203,23 @@ export function useLiff(): LiffState {
         // Use raw axios here too: a backend error (4xx/5xx) on this endpoint
         // must set an error state and stop — not trigger the shared 401
         // interceptor's reload path, which would restart the loop.
-        let sessionData: any;
+        let sessionData: { token: string; name: string; role: string };
         try {
-          const { data } = await axios.post(`${BASE_URL}/api/auth/session`, {
+          const { data } = await axios.post<{ token: string; name: string; role: string }>(`${BASE_URL}/api/auth/session`, {
             accessToken,
             isTest: IS_TEST,
           });
           sessionData = data;
-        } catch (sessionErr: any) {
-          const responseData = sessionErr?.response?.data ?? {};
-          if (responseData.needBind) {
-            const bindToken = responseData.bindToken;
+        } catch (sessionCreateErr: any) {
+          const sessionErrBody = sessionCreateErr?.response?.data ?? {};
+          if (sessionErrBody.needBind) {
+            const bindToken = sessionErrBody.bindToken;
             if (bindToken) sessionStorage.setItem("line_bind_token", bindToken);
             setState((prev) => ({ ...prev, needBind: true }));
             return;
           }
           // Any other session-creation failure → surface the error; do NOT retry.
-          const msg: string = responseData.error ?? sessionErr?.message ?? "Session 建立失敗";
+          const msg: string = sessionErrBody.error ?? sessionCreateErr?.message ?? "Session 建立失敗";
           setState((prev) => ({ ...prev, ready: false, error: msg }));
           return;
         }
@@ -225,12 +233,12 @@ export function useLiff(): LiffState {
           name: sessionData.name,
           role: sessionData.role,
         });
-      } catch (err: any) {
-        const msg: string = err?.message ?? "初始化失敗";
+      } catch (initErr: any) {
+        const msg: string = initErr?.message ?? "初始化失敗";
 
-        if (err?.response?.data?.needBind || err?.message === "帳號未綁定") {
+        if (initErr?.response?.data?.needBind || initErr?.message === "帳號未綁定") {
           // Store short-lived bind token (for external browser bind flow)
-          const bindToken = err?.response?.data?.bindToken;
+          const bindToken = initErr?.response?.data?.bindToken;
           if (bindToken) sessionStorage.setItem("line_bind_token", bindToken);
           setState((prev) => ({ ...prev, needBind: true }));
           return;
