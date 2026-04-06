@@ -77,19 +77,14 @@ ALLOWED_ORIGINS: list[str] = (
 )
 
 # Permitted LINE Login OAuth redirect_uri values — requests with other values are rejected (P0)
-_PRODUCTION_REDIRECT_URIS: list[str] = [
+ALLOWED_REDIRECT_URIS: list[str] = [
     "https://linchun-hr.web.app/line-auth-callback",
     "https://linchun-hr.firebaseapp.com/line-auth-callback",
     "https://linchun-hr-test.web.app/line-auth-callback",
     "https://linchun-hr-test.firebaseapp.com/line-auth-callback",
-]
-_DEVELOPMENT_REDIRECT_URIS: list[str] = [
     "http://localhost:5173/line-auth-callback",
     "http://localhost:3000/line-auth-callback",
 ]
-ALLOWED_REDIRECT_URIS: list[str] = (
-    _PRODUCTION_REDIRECT_URIS if IS_PRODUCTION else _PRODUCTION_REDIRECT_URIS + _DEVELOPMENT_REDIRECT_URIS
-)
 
 
 # ── Secret accessors ────────────────────────────────────────────────────────

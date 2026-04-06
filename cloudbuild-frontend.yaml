@@ -16,7 +16,7 @@ steps:
     entrypoint: npm
     args: [run, build]
     env:
-      - VITE_API_URL=https://kaohe-backend-test-6cfy7zdzmq-de.a.run.app
+      - VITE_API_URL=https://kaohe-backend-843141939177.asia-east1.run.app
       - VITE_LIFF_ID_TEST=${_LIFF_ID_TEST}
       - VITE_IS_TEST=true
 
@@ -47,7 +47,7 @@ steps:
         firebase deploy --only hosting:prod --project linchun-hr --non-interactive
 
 substitutions:
-  _LIFF_ID_TEST: "2009619528-aJO34c6u"  # Test LIFF app (endpoint: https://linchun-hr-test.web.app)
+  _LIFF_ID_TEST: ""  # Override in Cloud Build trigger: --substitutions=_LIFF_ID_TEST=xxxx-yyyy
 
 options:
   logging: CLOUD_LOGGING_ONLY
