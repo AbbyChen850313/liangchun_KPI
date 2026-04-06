@@ -42,7 +42,7 @@ jobs:
 
       - name: Audit dependencies for High+ CVEs
         working-directory: flask_backend
-        run: pip-audit --severity high
+        run: pip-audit .
 
   deploy:
     runs-on: ubuntu-latest
