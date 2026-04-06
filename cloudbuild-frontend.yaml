@@ -47,7 +47,7 @@ steps:
         firebase deploy --only hosting:prod --project linchun-hr --non-interactive
 
 substitutions:
-  _LIFF_ID_TEST: ""  # Override in Cloud Build trigger: --substitutions=_LIFF_ID_TEST=xxxx-yyyy
+  _LIFF_ID_TEST: "2009619528-aJO34c6u"  # Test LIFF app (endpoint: https://linchun-hr-test.web.app)
 
 options:
   logging: CLOUD_LOGGING_ONLY

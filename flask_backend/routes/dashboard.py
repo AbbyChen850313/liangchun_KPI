@@ -10,6 +10,7 @@ from flask import Blueprint, g, jsonify, request
 
 from services.auth_service import require_auth
 from services.scoring_service import (
+    SCORE_DIFF_ALERT_THRESHOLD,
     calc_tenure,
     current_quarter,
     days_since_join,
@@ -210,7 +211,7 @@ def _build_manager_dashboard(
         if self_raw is None:
             continue
         diff = round(s["rawScore"] - self_raw, 2)
-        if abs(diff) >= 15:
+        if abs(diff) >= SCORE_DIFF_ALERT_THRESHOLD:
             diff_alerts.append({
                 "empName": s["empName"],
                 "selfRawScore": self_raw,

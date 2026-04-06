@@ -59,22 +59,22 @@ api.interceptors.response.use(
       window.location.reload();
     }
 
-    const normalised = new Error(responseData.error ?? err.message ?? "網路錯誤") as any;
-    normalised.response = err.response;
-    throw normalised;
+    const normalisedErr = new Error(responseData.error ?? err.message ?? "網路錯誤") as any;
+    normalisedErr.response = err.response;
+    throw normalisedErr;
   }
 );
 
 export async function apiGetAnnualSummary(year?: string): Promise<AnnualSummaryResponse> {
-  const params = year ? `?year=${encodeURIComponent(year)}` : "";
-  const res = await api.get<AnnualSummaryResponse>(`/api/scoring/annual-summary${params}`);
-  return res.data;
+  const queryString = year ? `?year=${encodeURIComponent(year)}` : "";
+  const response = await api.get<AnnualSummaryResponse>(`/api/scoring/annual-summary${queryString}`);
+  return response.data;
 }
 
 export async function apiGetSeasonStatus(year?: string): Promise<SeasonScoreStatus> {
-  const params = year ? `?year=${encodeURIComponent(year)}` : "";
-  const res = await api.get<SeasonScoreStatus>(`/api/scoring/season-status${params}`);
-  return res.data;
+  const queryString = year ? `?year=${encodeURIComponent(year)}` : "";
+  const response = await api.get<SeasonScoreStatus>(`/api/scoring/season-status${queryString}`);
+  return response.data;
 }
 
 export interface QuarterEmployeesResponse {
@@ -83,22 +83,22 @@ export interface QuarterEmployeesResponse {
 }
 
 export async function apiGetQuarterEmployees(quarter: string): Promise<QuarterEmployeesResponse> {
-  const res = await api.get<QuarterEmployeesResponse>(
+  const response = await api.get<QuarterEmployeesResponse>(
     `/api/scoring/quarter-employees?quarter=${encodeURIComponent(quarter)}`
   );
-  return res.data;
+  return response.data;
 }
 
 // ── Work diary ────────────────────────────────────────────────────────────
 
 export async function apiGetMyLogs(): Promise<WorkLog[]> {
-  const res = await api.get<{ logs: WorkLog[] }>("/api/diary/my-logs");
-  return res.data.logs;
+  const response = await api.get<{ logs: WorkLog[] }>("/api/diary/my-logs");
+  return response.data.logs;
 }
 
 export async function apiCreateLog(date: string, content: string): Promise<{ id: string }> {
-  const res = await api.post<{ id: string }>("/api/diary/log", { date, content });
-  return res.data;
+  const response = await api.post<{ id: string }>("/api/diary/log", { date, content });
+  return response.data;
 }
 
 export async function apiUpdateLog(logId: string, date: string, content: string): Promise<void> {
@@ -110,8 +110,8 @@ export async function apiDeleteLog(logId: string): Promise<void> {
 }
 
 export async function apiGetEmployeeLogs(empName: string): Promise<{ logs: WorkLog[]; empName: string }> {
-  const res = await api.get<{ logs: WorkLog[]; empName: string }>(
+  const response = await api.get<{ logs: WorkLog[]; empName: string }>(
     `/api/diary/employee-logs?name=${encodeURIComponent(empName)}`
   );
-  return res.data;
+  return response.data;
 }

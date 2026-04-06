@@ -17,11 +17,6 @@ function emptyScores(): ScoreItems {
   return { item1: "", item2: "", item3: "", item4: "", item5: "", item6: "" };
 }
 
-function defaultScores(): ScoreItems {
-  return { item1: DEFAULT_GRADE, item2: DEFAULT_GRADE, item3: DEFAULT_GRADE,
-           item4: DEFAULT_GRADE, item5: DEFAULT_GRADE, item6: DEFAULT_GRADE };
-}
-
 interface QuarterEmployeesResponse {
   quarter: string;
   employees: Array<{ name: string; section: string; scoreStatus: string }>;
@@ -80,7 +75,7 @@ export default function ManagerBatch() {
   }
 
   async function handleSubmit() {
-    if (!data) return;
+    if (submitting || !data) return; // Prevent double-submit
 
     const entries = data.employees
       .filter((emp) => emp.scoreStatus !== "已送出")

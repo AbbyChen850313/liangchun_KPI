@@ -29,8 +29,8 @@ export interface ILiffAdapter {
   isInClient(): boolean;
   isLoggedIn(): boolean;
   login(): void;
-  /** Returns the LIFF access token; init() must have been called first. */
-  getAccessToken(): string;
+  /** Returns the LIFF access token; init() must have been called first. Returns null if unavailable. */
+  getAccessToken(): string | null;
   logout(): void;
 }
 
@@ -79,8 +79,8 @@ class RealLiffAdapter implements ILiffAdapter {
     window.liff.login();
   }
 
-  getAccessToken(): string {
-    return window.liff.getAccessToken();
+  getAccessToken(): string | null {
+    return window.liff.getAccessToken() ?? null;
   }
 
   logout(): void {
