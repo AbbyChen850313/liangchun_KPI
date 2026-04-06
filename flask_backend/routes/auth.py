@@ -189,12 +189,13 @@ def bind_account():
     # Persist binding via plugin
     _STORE.bind(sheet_row, line_uid, display_name, is_test)
 
+    bound_name = account["name"]
     logger.info(
-        "AUDIT | route=bind_account | actor=%s(%s) | action=bind | target=%s",
-        name, line_uid, employee_id,
+        "AUDIT | route=bind_account | actor=%s(%s) | action=bind | fields=%s",
+        bound_name, line_uid, field_values,
     )
     write_audit_log(
-        actor_name=name, actor_uid=line_uid,
+        actor_name=bound_name, actor_uid=line_uid,
         action="bind_account",
         details={**field_values, "displayName": display_name},
         is_test=is_test,
@@ -204,7 +205,7 @@ def bind_account():
     try:
         push_message(
             line_uid,
-            f"✅ 帳號綁定成功！\n您好，{name}，歡迎使用考核評分系統。",
+            f"✅ 帳號綁定成功！\n您好，{bound_name}，歡迎使用考核評分系統。",
             is_test=is_test,
         )
     except Exception:
