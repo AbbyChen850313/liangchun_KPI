@@ -7,7 +7,23 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
+import { SESSION_KEY } from "../services/authRefresh";
 import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow, AnnualAdjustRow } from "../types";
+import { SCORE_DIFF_ALERT_THRESHOLD, SCORE_GRADES, TOAST_DISMISS_MS } from "../constants/scoring";
+
+/** Decode lineUid and role from the stored session JWT without triggering a refresh. */
+function decodeSessionUser(): { lineUid: string; role: string } {
+  const token = localStorage.getItem(SESSION_KEY);
+  if (!token) return { lineUid: "", role: "" };
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return { lineUid: "", role: "" };
+    const payload = JSON.parse(atob(parts[1]));
+    return { lineUid: payload.lineUid ?? "", role: payload.role ?? "" };
+  } catch {
+    return { lineUid: "", role: "" };
+  }
+}
 
 type Tab = "progress" | "settings" | "employees" | "batch" | "comparison" | "annual" | "push";
 
@@ -57,16 +73,18 @@ function ProgressTab() {
   if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
   if (error) return <div className="error-page">{error}</div>;
 
+  const managers: any[] = Array.isArray(data) ? data : [];
+
   return (
     <div className="admin-section">
       <h3>各主管評分進度</h3>
       <div className="progress-list">
-        {(data as any[]).map((m: any) => {
-          const pct = m.total > 0 ? Math.round((m.scored / m.total) * 100) : 0;
+        {managers.map((manager: any) => {
+          const pct = manager.total > 0 ? Math.round((manager.scored / manager.total) * 100) : 0;
           return (
-            <div key={m.lineUid} className="progress-row">
-              <div className="progress-name">{m.managerName}</div>
-              <div className="progress-count">{m.scored}/{m.total}</div>
+            <div key={manager.lineUid} className="progress-row">
+              <div className="progress-name">{manager.managerName}</div>
+              <div className="progress-count">{manager.scored}/{manager.total}</div>
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: `${pct}%` }} />
               </div>
@@ -102,7 +120,7 @@ function SettingsTab() {
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3000);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   async function handleSave() {
@@ -163,7 +181,7 @@ function EmployeesTab() {
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3500);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   function toggleSelectAll() {
@@ -185,8 +203,8 @@ function EmployeesTab() {
   async function handleSync() {
     setSyncing(true);
     try {
-      const { data: res } = await api.post("/api/admin/employees/sync");
-      showToast(`✅ 同步完成，共 ${res.count} 位員工`);
+      const { data: syncResult } = await api.post("/api/admin/employees/sync");
+      showToast(`✅ 同步完成，共 ${syncResult.count} 位員工`);
       setSelectedNames(new Set());
       refetch();
     } catch (err: any) {
@@ -197,16 +215,17 @@ function EmployeesTab() {
   }
 
   async function handleBatchReset() {
-    const quarter = settingsData?.["當前季度"] ?? "";
-    if (!quarter) { showToast("❌ 無法取得當前季度，請先設定系統設定"); return; }
+    if (!settingsData) { showToast("❌ 設定載入中，請稍後再試"); return; }
+    const quarter = settingsData["當前季度"] ?? "";
+    if (!quarter) { showToast("❌ 未設定當前季度，請至系統設定填寫"); return; }
     if (selectedNames.size === 0) { showToast("請先勾選要重置的員工"); return; }
     setResetting(true);
     try {
-      const { data: res } = await api.post("/api/admin/batch-reset", {
+      const { data: resetResult } = await api.post("/api/admin/batch-reset", {
         quarter,
         empNames: Array.from(selectedNames),
       });
-      showToast(`✅ 已重置 ${res.resetCount} 筆評分記錄`);
+      showToast(`✅ 已重置 ${resetResult.resetCount} 筆評分記錄`);
     } catch (err: any) {
       showToast(`❌ ${err.message}`);
     } finally {
@@ -215,8 +234,9 @@ function EmployeesTab() {
   }
 
   async function handleExportCsv() {
-    const quarter = settingsData?.["當前季度"] ?? "";
-    if (!quarter) { showToast("❌ 無法取得當前季度，請先設定系統設定"); return; }
+    if (!settingsData) { showToast("❌ 設定載入中，請稍後再試"); return; }
+    const quarter = settingsData["當前季度"] ?? "";
+    if (!quarter) { showToast("❌ 未設定當前季度，請至系統設定填寫"); return; }
     setExporting(true);
     try {
       const response = await api.get("/api/admin/export-csv", {
@@ -340,7 +360,7 @@ function PushWizardTab() {
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3500);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   async function handleSaveManagerDates() {
@@ -382,8 +402,8 @@ function PushWizardTab() {
   async function handleTriggerManagerNow(isTest: boolean) {
     setTriggeringManager(true);
     try {
-      const { data: res } = await api.post("/api/admin/trigger-reminder", { isTest });
-      showToast(`✅ 已發送提醒給 ${res.notifiedCount} 位主管`);
+      const { data: reminderResult } = await api.post("/api/admin/trigger-reminder", { isTest });
+      showToast(`✅ 已發送提醒給 ${reminderResult.notifiedCount} 位主管`);
     } catch (err: any) {
       showToast(`❌ ${err.message}`);
     } finally {
@@ -394,8 +414,8 @@ function PushWizardTab() {
   async function handleTriggerEmployeeNow(isTest: boolean) {
     setTriggeringEmployee(true);
     try {
-      const { data: res } = await api.post("/api/admin/trigger-employee-reminder", { isTest });
-      showToast(`✅ 已發送自評提醒給 ${res.notifiedCount} 位員工`);
+      const { data: reminderResult } = await api.post("/api/admin/trigger-employee-reminder", { isTest });
+      showToast(`✅ 已發送自評提醒給 ${reminderResult.notifiedCount} 位員工`);
     } catch (err: any) {
       showToast(`❌ ${err.message}`);
     } finally {
@@ -547,9 +567,9 @@ function ScoreComparisonTab() {
   );
 
   const rows: ScoreComparisonRow[] = data?.rows ?? [];
-  const flaggedCount = rows.filter((r) => r.flagged).length;
+  const flaggedCount = rows.filter((row) => row.flagged).length;
   const [showFlaggedOnly, setShowFlaggedOnly] = useState(false);
-  const displayRows = showFlaggedOnly ? rows.filter((r) => r.flagged) : rows;
+  const displayRows = showFlaggedOnly ? rows.filter((row) => row.flagged) : rows;
 
   return (
     <div className="admin-section">
@@ -579,7 +599,7 @@ function ScoreComparisonTab() {
 
       {flaggedCount > 0 && (
         <div className="deadline-warning" style={{ margin: "0 0 12px" }}>
-          ⚠️ 共 {flaggedCount} 筆差異 ≥ 15 分，請關注
+          ⚠️ 共 {flaggedCount} 筆差異 ≥ {SCORE_DIFF_ALERT_THRESHOLD} 分，請關注
         </div>
       )}
 
@@ -628,8 +648,6 @@ function ScoreComparisonTab() {
 
 // ── Batch Scoring tab ─────────────────────────────────────────────────────
 
-const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
-
 function BatchScoringTab() {
   const { data: settings } = useApi<Settings>(
     () => api.get("/api/admin/settings").then((r) => r.data)
@@ -667,12 +685,12 @@ function BatchScoringTab() {
   const candidateRows: Array<{ managerName: string; managerLineUid: string; empName: string; section: string }> = [];
   if (statusData && employees && responsibilities) {
     const respMap: Record<string, any[]> = {};
-    (responsibilities as any[]).forEach((r: any) => {
-      respMap[r.lineUid] = [...(respMap[r.lineUid] ?? []), r];
+    (responsibilities as any[]).forEach((resp: any) => {
+      respMap[resp.lineUid] = [...(respMap[resp.lineUid] ?? []), resp];
     });
     (statusData as any[]).forEach((mgr: any) => {
       const myResp = respMap[mgr.lineUid] ?? [];
-      const mySections = new Set(myResp.map((r: any) => r.section));
+      const mySections = new Set(myResp.map((resp: any) => resp.section));
       (employees as any[])
         .filter((e: any) => mySections.has(e.section))
         .forEach((e: any) => {
@@ -687,10 +705,15 @@ function BatchScoringTab() {
   }
 
   async function handleSubmit() {
+    if (submitting) return; // Prevent double-submit
     const q = quarter || settings?.["當前季度"] || "";
     if (!q) { setToast("❌ 請先選擇或確認當前季度"); return; }
 
+    const { lineUid: currentLineUid, role: currentRole } = decodeSessionUser();
+    const isPrivileged = currentRole === "HR" || currentRole === "系統管理員";
+
     const payload: BatchScoreEntry[] = candidateRows
+      .filter((row) => isPrivileged || !currentLineUid || row.managerLineUid === currentLineUid)
       .map((row) => {
         const key = rowKey(row.managerName, row.empName);
         const entry = entries[key];
@@ -714,7 +737,7 @@ function BatchScoringTab() {
       setToast(`❌ ${err.message}`);
     } finally {
       setSubmitting(false);
-      setTimeout(() => setToast(""), 4000);
+      setTimeout(() => setToast(""), TOAST_DISMISS_MS);
     }
   }
 
@@ -771,7 +794,7 @@ function BatchScoringTab() {
                           style={{ fontSize: 13, padding: "2px 4px" }}
                         >
                           <option value="">-</option>
-                          {GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+                          {SCORE_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
                         </select>
                       </td>
                     );
@@ -823,7 +846,7 @@ function AnnualAdjustTab() {
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3500);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   async function handleSave(empName: string) {
@@ -881,7 +904,8 @@ function AnnualAdjustTab() {
                 <tr><td colSpan={6} style={{ textAlign: "center", color: "#999", padding: 20 }}>尚無資料</td></tr>
               ) : rows.map((row) => {
                 const displaySpecial = edits[row.empName] ?? row.annualSpecial;
-                const displayFinal = row.annualAvg + displaySpecial;
+                const parsedSpecial = parseFloat(String(displaySpecial));
+                const displayFinal = row.annualAvg + (isNaN(parsedSpecial) ? 0 : parsedSpecial);
                 const isDirty = row.empName in edits;
                 return (
                   <tr key={row.empName}>

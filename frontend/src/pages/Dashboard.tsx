@@ -16,6 +16,7 @@ import type {
   EmployeeDashboard,
   SysAdminDashboard,
 } from "../types";
+import { DEADLINE_WARNING_DAYS, MS_PER_DAY, SCORE_DIFF_ALERT_THRESHOLD } from "../constants/scoring";
 
 type Filter = "all" | "pending" | "draft" | "done" | "probation";
 
@@ -40,7 +41,7 @@ export default function Dashboard() {
     );
 
   if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
-  if (error) return <div className="error-page">{error}</div>;
+  if (error) return <div className="error-page">{error || "載入失敗，請重新整理"}</div>;
   if (!data) return null;
 
   // ── Employee (同仁) view ──────────────────────────────────────────────────
@@ -177,12 +178,12 @@ function Header({
 }
 
 function InfoBar({ data }: { data: DashboardData }) {
-  const pct = data.total > 0 ? Math.round((data.scored / data.total) * 100) : 0;
+  const pct = (data.total ?? 0) > 0 ? Math.round((data.scored / data.total) * 100) : 0;
   const deadline = data.settings["評分截止日"];
   let deadlineText = "-";
   let daysLeft = Infinity;
   if (deadline) {
-    daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000);
+    daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / MS_PER_DAY);
     deadlineText = `${new Date(deadline).toLocaleDateString("zh-TW")}（剩 ${daysLeft} 天）`;
   }
 
@@ -212,7 +213,7 @@ function InfoBar({ data }: { data: DashboardData }) {
         </div>
       </div>
 
-      {daysLeft <= 2 && daysLeft >= 0 && (
+      {daysLeft <= DEADLINE_WARNING_DAYS && daysLeft >= 0 && (
         <div className="deadline-warning">
           ⚠️ 截止日剩 {daysLeft} 天，請盡快完成評分！
         </div>
@@ -336,11 +337,11 @@ function AnnualSummaryTable({ data }: { data: AnnualSummaryResponse }) {
               {data.quarters.map((q) => (
                 <td key={q}>
                   {row.quarters[q] != null
-                    ? row.quarters[q]
+                    ? Number(row.quarters[q]).toFixed(1)
                     : <span className="badge-pending">未評分</span>}
                 </td>
               ))}
-              <td><strong>{row.annualAvg}</strong></td>
+              <td><strong>{row.annualAvg != null ? Number(row.annualAvg).toFixed(2) : "未評分"}</strong></td>
             </tr>
           ))}
         </tbody>
@@ -388,7 +389,7 @@ function EmployeeCard({
 function DiffAlertBanner({ alerts }: { alerts: DiffAlert[] }) {
   return (
     <div className="deadline-warning" style={{ margin: "0 0 12px" }}>
-      ⚠️ {alerts.length} 筆自評 vs 主管差異 ≥ 15 分：
+      ⚠️ {alerts.length} 筆自評 vs 主管差異 ≥ {SCORE_DIFF_ALERT_THRESHOLD} 分：
       {alerts.map((a) => (
         <span key={a.empName} style={{ marginLeft: 8 }}>
           {a.empName}（差 {a.diff > 0 ? "+" : ""}{a.diff.toFixed(1)}）
@@ -404,14 +405,14 @@ function filterEmployees(employees: Employee[], filter: Filter): Employee[] {
   switch (filter) {
     case "pending":
       return employees.filter(
-        (e) => e.scoreStatus !== "已送出" && e.scoreStatus !== "草稿"
+        (emp) => emp.scoreStatus !== "已送出" && emp.scoreStatus !== "草稿"
       );
     case "draft":
-      return employees.filter((e) => e.scoreStatus === "草稿");
+      return employees.filter((emp) => emp.scoreStatus === "草稿");
     case "done":
-      return employees.filter((e) => e.scoreStatus === "已送出");
+      return employees.filter((emp) => emp.scoreStatus === "已送出");
     case "probation":
-      return employees.filter((e) => e.isProbation);
+      return employees.filter((emp) => emp.isProbation);
     default:
       return employees;
   }
