@@ -306,13 +306,13 @@ class SheetsService:
     def sync_employees_from_hr(self) -> int:
         """Copy eligible employees from HR Sheet → 員工資料 sheet. Returns count."""
         HR_COL = {
-            "employeeId": 2,   # C
-            "name": 4,         # E
-            "dept": 10,        # K
-            "section": 11,     # L
-            "joinDate": 28,    # AC
-            "leaveDate": 30,   # AE
-            "include": 36,     # AK — "算入考核"
+            "employeeId": 2,   # C 員工編號
+            "name": 4,         # E 姓名
+            "dept": 10,        # K 部門
+            "section": 11,     # L 科別
+            "joinDate": 29,    # AD 到職日(加保)
+            "leaveDate": 31,   # AF 離職日
+            "include": 37,     # AL 是否算考核
         }
         hr_ws = self._hr_ss().worksheet("(人工打)總表")
         hr_rows = hr_ws.get_all_values()
@@ -331,7 +331,7 @@ class SheetsService:
 
         dest_ws = self.worksheet("員工資料")
         # Clear existing data (keep header row)
-        dest_ws.resize(rows=1)
+        dest_ws.batch_clear(["A2:Z"])
         if eligible:
             dest_ws.append_rows(eligible, value_input_option="USER_ENTERED")
         _invalidate(self.is_test, "員工資料")
