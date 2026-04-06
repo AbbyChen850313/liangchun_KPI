@@ -7,16 +7,13 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import { refreshRole } from "../services/authRefresh";
-import type { ScoreGrade, ScoreItem, ScoreItems, ScoreRecord } from "../types";
-
-const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
-const GRADE_SCORES: Record<ScoreGrade, number> = {
-  甲: 95,
-  乙: 85,
-  丙: 65,
-  丁: 35,
-  "": 0,
-};
+import type { ScoreItem, ScoreItems, ScoreRecord } from "../types";
+import {
+  POST_SUBMIT_REDIRECT_MS,
+  SCORE_GRADES,
+  TOAST_DISMISS_MS,
+} from "../constants/scoring";
+import { calculateRawScore } from "../utils/scoring";
 
 export default function Score() {
   const navigate = useNavigate();
@@ -60,6 +57,19 @@ export default function Score() {
     [empName, historyYear]
   );
 
+  // Guard: empName is required — without it we cannot load or submit scores.
+  // Placed after hooks to comply with Rules of Hooks.
+  if (!empName) {
+    return (
+      <div className="page-center">
+        <div className="card">
+          <p className="error">⚠️ 缺少員工參數，請從主畫面選擇員工後再進入此頁。</p>
+          <button className="btn-primary" onClick={() => navigate("/")}>返回主畫面</button>
+        </div>
+      </div>
+    );
+  }
+
   // Pre-fill existing scores
   useEffect(() => {
     if (myScores?.[empName]) {
@@ -70,26 +80,21 @@ export default function Score() {
     }
   }, [myScores, empName]);
 
-  function calcRaw(): number {
-    const vals = (Object.values(scores) as ScoreGrade[])
-      .filter((g) => g !== "")
-      .map((g) => GRADE_SCORES[g]);
-    if (!vals.length) return 0;
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
-  }
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3000);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   async function handleSave(submit: boolean) {
+    if (saving) return; // Prevent double-submit
+
     if (submit) {
-      const missing = Object.entries(scores)
-        .filter(([, v]) => !v)
-        .map(([k]) => k);
-      if (missing.length) {
-        showToast(`請填寫所有評分項目（缺少：${missing.join(", ")}）`);
+      const missingItemKeys = Object.entries(scores)
+        .filter(([, grade]) => !grade)
+        .map(([itemKey]) => itemKey);
+      if (missingItemKeys.length) {
+        showToast(`請填寫所有評分項目（缺少：${missingItemKeys.join(", ")}）`);
         return;
       }
     }
@@ -106,15 +111,15 @@ export default function Score() {
         ...(quarter && { quarter }),
       });
       showToast(submit ? "✅ 評分已送出" : "💾 草稿已儲存");
-      if (submit) setTimeout(() => navigate("/"), 1200);
-    } catch (err: any) {
-      showToast(`❌ ${err.message}`);
+      if (submit) setTimeout(() => navigate("/"), POST_SUBMIT_REDIRECT_MS);
+    } catch (saveErr: any) {
+      showToast(`❌ ${saveErr.message}`);
     } finally {
       setSaving(false);
     }
   }
 
-  const rawScore = calcRaw();
+  const rawScore = calculateRawScore(scores);
   const finalScore = rawScore + special;
   const selfScores = myScores?.[empName]?.selfScores ?? null;
   const selfRawScore = myScores?.[empName]?.selfRawScore ?? null;
@@ -183,7 +188,7 @@ export default function Score() {
                     </div>
                   )}
                   <div className="grade-buttons">
-                    {GRADES.map((g) => (
+                    {SCORE_GRADES.map((g) => (
                       <button
                         key={g}
                         className={`grade-btn${scores[key] === g ? " selected" : ""}`}

@@ -6,16 +6,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
-import type { ScoreGrade, ScoreItem, ScoreItems, SelfScoreRecord } from "../types";
-
-const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
-const GRADE_SCORES: Record<ScoreGrade, number> = {
-  甲: 95,
-  乙: 85,
-  丙: 65,
-  丁: 35,
-  "": 0,
-};
+import type { ScoreItem, ScoreItems, SelfScoreRecord } from "../types";
+import {
+  POST_SUBMIT_REDIRECT_MS,
+  SCORE_GRADES,
+  TOAST_DISMISS_MS,
+} from "../constants/scoring";
+import { calculateRawScore } from "../utils/scoring";
 
 export default function SelfScore() {
   const navigate = useNavigate();
@@ -44,28 +41,23 @@ export default function SelfScore() {
     }
   }, [existing]);
 
-  function calcRaw(): number {
-    const vals = (Object.values(scores) as ScoreGrade[])
-      .filter((g) => g !== "")
-      .map((g) => GRADE_SCORES[g]);
-    if (!vals.length) return 0;
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
-  }
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 3000);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   const isSubmitted = existing?.status === "已送出";
 
   async function handleSave(submit: boolean) {
+    if (saving) return; // Prevent double-submit
+
     if (submit) {
-      const missing = Object.entries(scores)
-        .filter(([, v]) => !v)
-        .map(([k]) => k);
-      if (missing.length) {
-        showToast(`請填寫所有評分項目（缺少：${missing.join(", ")}）`);
+      const missingItemKeys = Object.entries(scores)
+        .filter(([, grade]) => !grade)
+        .map(([itemKey]) => itemKey);
+      if (missingItemKeys.length) {
+        showToast(`請填寫所有評分項目（缺少：${missingItemKeys.join(", ")}）`);
         return;
       }
     }
@@ -75,15 +67,15 @@ export default function SelfScore() {
       const endpoint = submit ? "/api/scoring/self-submit" : "/api/scoring/self-draft";
       await api.post(endpoint, { scores, note });
       showToast(submit ? "✅ 自評已送出" : "💾 草稿已儲存");
-      if (submit) setTimeout(() => navigate("/"), 1200);
-    } catch (err: any) {
-      showToast(`❌ ${err.message}`);
+      if (submit) setTimeout(() => navigate("/"), POST_SUBMIT_REDIRECT_MS);
+    } catch (saveErr: any) {
+      showToast(`❌ ${saveErr.message}`);
     } finally {
       setSaving(false);
     }
   }
 
-  const rawScore = calcRaw();
+  const rawScore = calculateRawScore(scores);
 
   return (
     <div className="page">
@@ -127,7 +119,7 @@ export default function SelfScore() {
                 )}
                 <div className="score-item-row">
                   <div className="grade-buttons">
-                    {GRADES.map((g) => (
+                    {SCORE_GRADES.map((g) => (
                       <button
                         key={g}
                         className={`grade-btn${scores[key] === g ? " selected" : ""}`}
