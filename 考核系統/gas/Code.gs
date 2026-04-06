@@ -370,6 +370,7 @@ function doPost(e) {
       apiForceResetNotifySecret,
       apiNotifyHR,
       apiNotifyOwner,
+      apiHealthCheckAll,
       apiSetBridgeUrl,
       apiUpdateRole,
       apiSetupTestEnv,
@@ -980,14 +981,17 @@ function _bridgeFetch(path, payload, method = 'post') {
   const secret = props.getProperty('NOTIFY_SECRET');
   if (!bridgeUrl) throw new Error('BRIDGE_URL 未設定');
 
-  const body = method === 'post'
-    ? JSON.stringify({ ...payload, token: secret })
-    : undefined;
+  if (method === 'get') {
+    return UrlFetchApp.fetch(`${bridgeUrl}${path}`, {
+      method: 'get',
+      muteHttpExceptions: true,
+    });
+  }
 
   return UrlFetchApp.fetch(`${bridgeUrl}${path}`, {
     method,
-    contentType: method === 'post' ? 'application/json' : undefined,
-    payload: body,
+    contentType: 'application/json',
+    payload: JSON.stringify({ ...payload, token: secret }),
     muteHttpExceptions: true,
   });
 }
@@ -1160,14 +1164,33 @@ function _handleStopCommand(text, replyToken) {
 function _handleStatusCommand(replyToken) {
   try {
     const resp = _bridgeFetch('/health', {}, 'get');
-    const result = JSON.parse(resp.getContentText());
-    const running = result.running || {};
-    if (Object.keys(running).length === 0) {
+    const raw = resp.getContentText();
+    let result;
+    try {
+      result = JSON.parse(raw);
+    } catch (_) {
+      _lineReply(replyToken, `⚠️ Bridge 回應非 JSON（狀態碼 ${resp.getResponseCode()}）`);
+      return;
+    }
+    const loops = result.loops || {};
+    const tasks = result.bridge_tasks || {};
+    const lines = [];
+
+    // tmux loop 狀態
+    for (const [proj, info] of Object.entries(loops)) {
+      const icon = info.status === 'running' ? '🔧' : info.status === 'completed' ? '✅' : '💤';
+      const last = info.last ? `\n  ${info.last.slice(0, 50)}` : '';
+      lines.push(`${icon} ${_projectName(proj)} [${info.status}]${last}`);
+    }
+
+    // bridge 直接任務
+    for (const [proj, info] of Object.entries(tasks)) {
+      lines.push(`▶ ${_projectName(proj)} [${info.mode}]\n  ${info.task.slice(0, 40)}`);
+    }
+
+    if (lines.length === 0) {
       _lineReply(replyToken, '💤 目前所有專案閒置');
     } else {
-      const lines = Object.entries(running).map(([proj, info]) =>
-        `▶ ${_projectName(proj)} [${info.mode === 'loop' ? '24h循環' : 'Bug修復'}]\n  自 ${info.started_at.slice(11,16)}\n  ${info.task.slice(0, 40)}`
-      );
       _lineReply(replyToken, lines.join('\n\n'));
     }
   } catch (err) {
