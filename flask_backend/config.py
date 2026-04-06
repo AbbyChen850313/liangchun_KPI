@@ -113,9 +113,8 @@ def gcp_sa_info() -> dict:
 
 def jwt_secret() -> str:
     secret = _get_secret("JWT_SECRET")
-    assert len(secret) >= 32, (
-        "JWT_SECRET must be at least 32 characters for HS256 security."
-    )
+    if len(secret) < 32:
+        raise ValueError("JWT_SECRET must be at least 32 characters for HS256 security.")
     return secret
 
 
