@@ -52,6 +52,12 @@ def create_app() -> Flask:
     def health():
         return jsonify({"status": "ok"})
 
+    # ── LINE Webhook stub ──────────────────────────────────────────────────
+    # 實際 LINE 事件處理由 GAS doPost() 負責；此路由只負責通過 LINE webhook 驗證
+    @app.route("/webhook", methods=["POST"])
+    def webhook():
+        return "", 200
+
     # ── Global error handlers ──────────────────────────────────────────────
     @app.errorhandler(404)
     def not_found(e):
