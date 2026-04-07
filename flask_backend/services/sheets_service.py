@@ -209,12 +209,14 @@ class SheetsService:
                 )
                 continue
             if len(headers) < min_cols:
-                logger.warning(
+                logger.error(
                     "validate_sheet_headers: Sheet '%s' has %d columns, expected %d. "
-                    "Some features may not work correctly. "
-                    "Check if columns were deleted or the sheet was restructured.",
+                    "Features depending on missing columns will silently return empty strings. "
+                    "Add the missing columns to the sheet to restore full functionality.",
                     sheet_name, len(headers), min_cols,
                 )
+                # Do NOT raise — allow backend to start and serve other endpoints.
+                # Raising here causes total outage; per-call errors are preferable.
         logger.info("validate_sheet_headers: all key sheets OK (is_test=%s)", self.is_test)
 
     # ── Settings (系統設定) ────────────────────────────────────────────────
