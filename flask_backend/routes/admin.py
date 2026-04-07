@@ -170,6 +170,54 @@ def refresh_roles():
     return jsonify({"success": True, "updatedCount": updated_count})
 
 
+# ── POST /api/admin/close-quarter ─────────────────────────────────────────
+
+@admin_bp.route("/close-quarter", methods=["POST"])
+@require_sysadmin
+def close_quarter():
+    """
+    SysAdmin closes a quarter — no further score submissions allowed for it.
+    Body: { quarter: "115Q1" }
+    Writes to settings: 已關帳季度 (comma-separated list).
+    """
+    is_test: bool = g.session.get("isTest", False)
+    body = request.get_json(silent=True) or {}
+    quarter = (body.get("quarter") or "").strip()
+    if not quarter:
+        return jsonify({"error": "必須提供 quarter"}), 400
+
+    sheets = _sheets(is_test)
+    settings = sheets.get_settings()
+    closed_raw: str = settings.get("已關帳季度", "") or ""
+    closed_list = [q.strip() for q in closed_raw.split(",") if q.strip()]
+    if quarter not in closed_list:
+        closed_list.append(quarter)
+    sheets.update_settings({"已關帳季度": ",".join(closed_list)})
+
+    logger.info(
+        "AUDIT | route=close_quarter | actor=%s(%s) | action=close_quarter | quarter=%s",
+        g.session["name"], g.session["lineUid"], quarter,
+    )
+    write_audit_log(
+        actor_name=g.session["name"], actor_uid=g.session["lineUid"],
+        action="close_quarter", details={"quarter": quarter}, is_test=is_test,
+    )
+    return jsonify({"success": True, "closedQuarters": closed_list})
+
+
+# ── GET /api/admin/closed-quarters ────────────────────────────────────────
+
+@admin_bp.route("/closed-quarters", methods=["GET"])
+@require_hr
+def get_closed_quarters():
+    """Return list of closed (locked) quarters."""
+    is_test: bool = g.session.get("isTest", False)
+    settings = _sheets(is_test).get_settings()
+    closed_raw: str = settings.get("已關帳季度", "") or ""
+    closed_list = [q.strip() for q in closed_raw.split(",") if q.strip()]
+    return jsonify({"closedQuarters": closed_list})
+
+
 # ── POST /api/admin/batch-reset ────────────────────────────────────────────
 
 @admin_bp.route("/batch-reset", methods=["POST"])
@@ -528,7 +576,6 @@ def get_score_comparison():
                                    selfRawScore, diff, flagged }] }
     flagged = True when |managerRawScore - selfRawScore| >= 15.
     """
-    from services.scoring_service import current_quarter as _current_quarter
     session = g.session
     is_test: bool = session.get("isTest", False)
     sheets = _sheets(is_test)

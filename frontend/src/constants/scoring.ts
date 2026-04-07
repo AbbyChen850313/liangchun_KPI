@@ -24,6 +24,10 @@ export const SCORE_DIFF_ALERT_THRESHOLD = 15;
 /** Toast auto-dismiss duration in milliseconds. */
 export const TOAST_DISMISS_MS = 3_000;
 
+/** HR/manager special score adjustment bounds (mirrors backend SPECIAL_SCORE_MIN/MAX). */
+export const SPECIAL_SCORE_MIN = -20;
+export const SPECIAL_SCORE_MAX = 20;
+
 /** Redirect delay after a successful submit, giving the user time to read the toast. */
 export const POST_SUBMIT_REDIRECT_MS = 1_200;
 

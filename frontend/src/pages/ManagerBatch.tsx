@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import type { BatchSubmitResult, ScoreGrade, ScoreItems } from "../types";
+import { TOAST_DISMISS_MS } from "../constants/scoring";
 
 const GRADES: ScoreGrade[] = ["甲", "乙", "丙", "丁"];
 
@@ -40,7 +41,7 @@ export default function ManagerBatch() {
 
   function showToast(msg: string) {
     setToast(msg);
-    setTimeout(() => setToast(""), 4000);
+    setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
 
   function getScores(empName: string): ScoreItems {

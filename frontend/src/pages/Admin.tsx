@@ -9,7 +9,7 @@ import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import { SESSION_KEY } from "../services/authRefresh";
 import type { Settings, ScoreGrade, ScoreItems, BatchScoreEntry, BatchSubmitResult, ScoreComparisonRow, AnnualAdjustRow } from "../types";
-import { SCORE_DIFF_ALERT_THRESHOLD, SCORE_GRADES, TOAST_DISMISS_MS } from "../constants/scoring";
+import { SCORE_DIFF_ALERT_THRESHOLD, SCORE_GRADES, SPECIAL_SCORE_MAX, SPECIAL_SCORE_MIN, TOAST_DISMISS_MS } from "../constants/scoring";
 
 /** Decode lineUid and role from the stored session JWT without triggering a refresh. */
 function decodeSessionUser(): { lineUid: string; role: string } {
@@ -648,17 +648,46 @@ function ScoreComparisonTab() {
 
 // ── Batch Scoring tab ─────────────────────────────────────────────────────
 
+interface ManagerStatusRow {
+  managerName: string;
+  lineUid: string;
+  total: number;
+  scored: number;
+  pending: number;
+}
+
+interface ManagerResponsibility {
+  lineUid: string;
+  section: string;
+  weight: number;
+}
+
+interface EmployeeRecord {
+  name: string;
+  dept: string;
+  section: string;
+  joinDate: string;
+  employeeId?: string;
+}
+
+interface BatchCandidateRow {
+  managerName: string;
+  managerLineUid: string;
+  empName: string;
+  section: string;
+}
+
 function BatchScoringTab() {
   const { data: settings } = useApi<Settings>(
     () => api.get("/api/admin/settings").then((r) => r.data)
   );
-  const { data: statusData, loading } = useApi(
+  const { data: statusData, loading } = useApi<ManagerStatusRow[]>(
     () => api.get("/api/scoring/all-status").then((r) => r.data)
   );
-  const { data: employees } = useApi(
+  const { data: employees } = useApi<EmployeeRecord[]>(
     () => api.get("/api/admin/employees").then((r) => r.data)
   );
-  const { data: responsibilities } = useApi(
+  const { data: responsibilities } = useApi<ManagerResponsibility[]>(
     () => api.get("/api/admin/responsibilities").then((r) => r.data)
   );
 
@@ -682,18 +711,18 @@ function BatchScoringTab() {
     }));
   }
 
-  const candidateRows: Array<{ managerName: string; managerLineUid: string; empName: string; section: string }> = [];
+  const candidateRows: BatchCandidateRow[] = [];
   if (statusData && employees && responsibilities) {
-    const respMap: Record<string, any[]> = {};
-    (responsibilities as any[]).forEach((resp: any) => {
+    const respMap: Record<string, ManagerResponsibility[]> = {};
+    responsibilities.forEach((resp) => {
       respMap[resp.lineUid] = [...(respMap[resp.lineUid] ?? []), resp];
     });
-    (statusData as any[]).forEach((mgr: any) => {
+    statusData.forEach((mgr) => {
       const myResp = respMap[mgr.lineUid] ?? [];
-      const mySections = new Set(myResp.map((resp: any) => resp.section));
-      (employees as any[])
-        .filter((e: any) => mySections.has(e.section))
-        .forEach((e: any) => {
+      const mySections = new Set(myResp.map((resp) => resp.section));
+      employees
+        .filter((e) => mySections.has(e.section))
+        .forEach((e) => {
           candidateRows.push({
             managerName: mgr.managerName,
             managerLineUid: mgr.lineUid,
@@ -916,8 +945,8 @@ function AnnualAdjustTab() {
                       <input
                         type="number"
                         step="0.5"
-                        min={-20}
-                        max={20}
+                        min={SPECIAL_SCORE_MIN}
+                        max={SPECIAL_SCORE_MAX}
                         value={displaySpecial}
                         onChange={(e) => setEdits((prev) => ({ ...prev, [row.empName]: Number(e.target.value) }))}
                         style={{ width: 70, padding: "3px 6px", fontSize: 13, textAlign: "right" }}
