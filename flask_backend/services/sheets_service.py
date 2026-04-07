@@ -209,10 +209,11 @@ class SheetsService:
                 )
                 continue
             if len(headers) < min_cols:
-                raise RuntimeError(
-                    f"Sheet '{sheet_name}' header has {len(headers)} columns, "
-                    f"expected at least {min_cols}. "
-                    "A column may have been deleted or the sheet was restructured."
+                logger.warning(
+                    "validate_sheet_headers: Sheet '%s' has %d columns, expected %d. "
+                    "Some features may not work correctly. "
+                    "Check if columns were deleted or the sheet was restructured.",
+                    sheet_name, len(headers), min_cols,
                 )
         logger.info("validate_sheet_headers: all key sheets OK (is_test=%s)", self.is_test)
 
