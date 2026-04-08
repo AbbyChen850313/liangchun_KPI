@@ -190,6 +190,7 @@ def _build_manager_dashboard(
         (
             emp for emp in all_employees
             if (emp["section"] in my_sections or emp.get("jobTitle", "") in my_sections)
+            and emp["name"] != manager_name  # exclude self-evaluation
             and not emp.get("leaveDate")  # exclude resigned
             and is_eligible(emp["joinDate"], min_days)
         ),

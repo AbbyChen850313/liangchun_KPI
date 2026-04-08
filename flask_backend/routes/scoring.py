@@ -443,7 +443,8 @@ def get_quarter_employees():
     section_employees = sorted(
         (
             e for e in all_employees
-            if e["section"] in manager_sections or e.get("jobTitle", "") in manager_sections
+            if (e["section"] in manager_sections or e.get("jobTitle", "") in manager_sections)
+            and e["name"] != manager_name  # exclude self-evaluation
         ),
         key=lambda e: (e["dept"], e["section"], e["name"]),
     )

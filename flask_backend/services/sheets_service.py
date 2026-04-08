@@ -350,11 +350,11 @@ class SheetsService:
         ws.update_cell(sheet_row, _COL_ACCOUNT["status"] + 1, "")
         _invalidate(self.is_test, "LINE帳號")
 
-    # ── Employees (員工資料) ───────────────────────────────────────────────
+    # ── Employees (考核名單) ───────────────────────────────────────────────
 
     def get_all_employees(self) -> list[dict]:
-        ws = self.worksheet("員工資料")
-        rows = _cached_rows(ws, self.is_test, "員工資料")
+        ws = self.worksheet("考核名單")
+        rows = _cached_rows(ws, self.is_test, "考核名單")
         return [
             {
                 "employeeId": _safe(row, 0),
@@ -374,7 +374,12 @@ class SheetsService:
         return any(emp["name"] == display_name for emp in self.get_all_employees())
 
     def sync_employees_from_hr(self) -> int:
-        """Copy eligible employees from HR Sheet → 員工資料 sheet. Returns count."""
+        """Copy eligible employees from HR Sheet → 考核名單 sheet. Returns count.
+
+        Includes:
+        1. Employees with AL="算入考核" (regular employees)
+        2. Managers listed in 主管権重 (even if not 算入考核), looked up from HR sheet
+        """
         HR_COL = {
             "employeeId": 2,   # C 員工編號
             "name": 4,         # E 姓名
@@ -389,10 +394,12 @@ class SheetsService:
         hr_rows = hr_ws.get_all_values()
 
         eligible = []
+        existing_emp_ids: set[str] = set()
         for row in hr_rows[1:]:
             if _safe(row, HR_COL["include"]) == "算入考核":
+                emp_id = _safe(row, HR_COL["employeeId"])
                 eligible.append([
-                    _safe(row, HR_COL["employeeId"]),
+                    emp_id,
                     _safe(row, HR_COL["name"]),
                     _safe(row, HR_COL["dept"]),
                     _safe(row, HR_COL["section"]),
@@ -400,13 +407,35 @@ class SheetsService:
                     _safe(row, HR_COL["leaveDate"]),
                     _safe(row, HR_COL["jobTitle"]),
                 ])
+                if emp_id:
+                    existing_emp_ids.add(emp_id)
 
-        dest_ws = self.worksheet("員工資料")
+        # Also include managers from 主管権重 (they may not be 算入考核 in HR)
+        manager_names = {
+            r["name"] for r in self.get_manager_responsibilities() if r.get("name")
+        }
+        for row in hr_rows[1:]:
+            name = _safe(row, HR_COL["name"])
+            emp_id = _safe(row, HR_COL["employeeId"])
+            if name in manager_names and emp_id not in existing_emp_ids:
+                eligible.append([
+                    emp_id,
+                    name,
+                    _safe(row, HR_COL["dept"]),
+                    _safe(row, HR_COL["section"]),
+                    _safe(row, HR_COL["joinDate"]),
+                    _safe(row, HR_COL["leaveDate"]),
+                    _safe(row, HR_COL["jobTitle"]),
+                ])
+                if emp_id:
+                    existing_emp_ids.add(emp_id)
+
+        dest_ws = self.worksheet("考核名單")
         # Clear existing data (keep header row)
         dest_ws.batch_clear(["A2:Z"])
         if eligible:
             dest_ws.append_rows(eligible, value_input_option="USER_ENTERED")
-        _invalidate(self.is_test, "員工資料")
+        _invalidate(self.is_test, "考核名單")
 
         # Sync to unified Firestore employees collection
         try:

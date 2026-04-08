@@ -108,7 +108,7 @@ def _build_stubs() -> None:
         def worksheet(self, name: str):
             if name == "主管權重":
                 return _FakeWorksheetResponsibilities()
-            if name == "員工資料":
+            if name == "考核名單":
                 return _FakeWorksheetEmployees()
             if name == "評分記錄":
                 return _score_store

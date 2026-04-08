@@ -73,7 +73,7 @@ def _build_gspread_stub():
             ]
 
     class _FakeWorksheetEmployees(_FakeWorksheet):
-        """員工資料 sheet: 王員工 in 人事科"""
+        """考核名單 sheet: 王員工 in 人事科"""
         def get_all_values(self):
             return [
                 ["employeeId", "name", "dept", "section", "joinDate", "leaveDate"],
@@ -119,7 +119,7 @@ def _build_gspread_stub():
         def worksheet(self, name):
             if name == "主管權重":
                 return _FakeWorksheetResponsibilities()
-            if name == "員工資料":
+            if name == "考核名單":
                 return _FakeWorksheetEmployees()
             if name == "評分記錄":
                 return _fake_scores_ws
