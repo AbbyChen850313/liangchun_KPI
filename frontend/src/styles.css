@@ -13,6 +13,7 @@ body {
 
 /* ── Layout ───────────────────────────────────────────────────────── */
 .page { max-width: 480px; margin: 0 auto; padding-bottom: 24px; width: 100%; }
+@media (min-width: 768px) { .page { max-width: 960px; } }
 
 .page-center {
   display: flex; align-items: center; justify-content: center;
@@ -38,6 +39,7 @@ body {
   border: 1px solid rgba(255,255,255,.5); border-radius: 6px;
   padding: 5px 8px; font-size: 12px; outline: none; max-width: 110px;
 }
+@media (min-width: 768px) { .sysadmin-controls select { max-width: 200px; } }
 .btn-link { background: none; border: none; color: rgba(255,255,255,.85);
   font-size: 11px; cursor: pointer; text-decoration: underline; }
 
@@ -435,3 +437,27 @@ body {
 }
 .comparison-table tr.flagged td { background: #fff3e0; }
 .flag-icon { color: #e65100; font-weight: 700; margin-left: 4px; }
+
+
+/* ── FAB (Floating Action Button) ─────────────────────────────────── */
+.fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #1976d2;
+  color: #fff;
+  font-size: 22px;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.fab:hover { background: #1565c0; box-shadow: 0 6px 16px rgba(0,0,0,0.3); }
+.fab:active { transform: scale(0.95); }

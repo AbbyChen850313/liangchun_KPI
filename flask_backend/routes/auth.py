@@ -289,7 +289,7 @@ def check_session():
     return jsonify({
         "bound": True,
         "name": g.session["name"],
-        "role": g.session["role"],
+        "role": account.get("role", "同仁"),
         "isTest": is_test,
     })
 

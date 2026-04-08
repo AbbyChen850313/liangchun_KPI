@@ -109,8 +109,8 @@ export function useLiff(): LiffState {
             const { data } = await axios.get(`${BASE_URL}/api/auth/check`, {
               headers: { Authorization: `Bearer ${existing}` },
             });
-            setState({ ready: true, needBind: false, error: null, lineUid: null, name: data.name, role: data.role });
-            refreshRole().catch(() => {});
+            const freshRole = await refreshRole().catch(() => null);
+            setState({ ready: true, needBind: false, error: null, lineUid: null, name: data.name, role: freshRole ?? data.role });
             return;
           } catch {
             // Token is expired or invalid — discard it and fall through to
