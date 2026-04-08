@@ -54,10 +54,25 @@ def get_dashboard():
     if role == "系統管理員":
         accounts = sheets.get_all_accounts()
         settings = sheets.get_settings()
+        # Managers = unique names from 主管權重 (source of truth for who evaluates)
+        responsibilities = sheets.get_manager_responsibilities()
+        seen: set[str] = set()
+        managers = []
+        for r in responsibilities:
+            name = r.get("name", "").strip()
+            job_title = r.get("jobTitle", "").strip()
+            if not name and not job_title:
+                continue
+            display = name or job_title
+            if display not in seen:
+                seen.add(display)
+                managers.append({"name": display, "lineUid": r.get("lineUid", "")})
+        managers.sort(key=lambda m: m["name"])
         return jsonify({
             "isSysAdmin": True,
             "managerName": session["name"],
             "accounts": accounts,
+            "managers": managers,
             "settings": settings,
         })
 
@@ -94,20 +109,25 @@ def get_manager_dashboard():
         return jsonify({"error": "無 HR 權限"}), 403
 
     target_uid = request.args.get("uid", "").strip()
-    if not target_uid:
-        return jsonify({"error": "缺少 uid 參數"}), 400
+    target_name = request.args.get("name", "").strip()
+    if not target_uid and not target_name:
+        return jsonify({"error": "缺少 uid 或 name 參數"}), 400
 
     is_test: bool = session.get("isTest", False)
     sheets = _sheets(is_test)
 
-    account, _ = sheets.find_account_by_uid(target_uid)
-    if not account:
-        return jsonify({"error": "找不到該帳號"}), 404
-    if account.get("role") not in ("主管", "系統管理員"):
-        return jsonify({"error": "此帳號非主管角色，無法查看主管儀表板"}), 403
+    if target_uid:
+        account, _ = sheets.find_account_by_uid(target_uid)
+        if not account:
+            return jsonify({"error": "找不到該帳號"}), 404
+        manager_name = account["name"]
+    else:
+        # Simulate by name (unbound managers who are in 主管權重)
+        manager_name = target_name
+        target_uid = ""  # will be resolved inside _build_manager_dashboard
 
     return jsonify(
-        _build_manager_dashboard(target_uid, account["name"], is_test, sheets)
+        _build_manager_dashboard(target_uid, manager_name, is_test, sheets)
     )
 
 
@@ -121,10 +141,27 @@ def _build_manager_dashboard(
     quarter = settings.get("當前季度") or current_quarter()
     responsibilities = sheets.get_manager_responsibilities()
 
-    # Find sections this manager is responsible for
+    # Resolve manager's employee ID from 員工資料 (source of truth for IDs)
+    manager_emp_id = ""
+    manager_job_title = ""
+    if manager_name:
+        employees = sheets.get_all_employees()
+        emp = next((e for e in employees if e.get("name", "").strip() == manager_name), None)
+        if emp:
+            manager_emp_id = emp.get("employeeId", "")
+        # Also get job title from LINE帳號 for fallback
+        accounts = sheets.get_all_accounts()
+        acc = next((a for a in accounts if a.get("name") == manager_name), None)
+        if acc:
+            manager_job_title = acc.get("jobTitle", "")
+
+    # Find sections this manager is responsible for.
+    # Priority: employeeId → lineUid → jobTitle
     my_responsibilities = [
         r for r in responsibilities
-        if r["lineUid"] == line_uid
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+           (line_uid and r.get("lineUid") == line_uid) or
+           (not manager_emp_id and not line_uid and manager_job_title and r.get("jobTitle") == manager_job_title)
     ]
 
     if not my_responsibilities:
@@ -149,12 +186,15 @@ def _build_manager_dashboard(
     min_days = int(settings.get("最低評分天數") or 3)
     probation_days = int(settings.get("試用期天數") or 90)
 
-    my_employees = [
-        emp for emp in all_employees
-        if emp["section"] in my_sections
-        and not emp.get("leaveDate")  # exclude resigned
-        and is_eligible(emp["joinDate"], min_days)
-    ]
+    my_employees = sorted(
+        (
+            emp for emp in all_employees
+            if (emp["section"] in my_sections or emp.get("jobTitle", "") in my_sections)
+            and not emp.get("leaveDate")  # exclude resigned
+            and is_eligible(emp["joinDate"], min_days)
+        ),
+        key=lambda e: (e["dept"], e["section"], e["name"]),
+    )
 
     # Get existing scores for this manager this quarter
     existing_scores = sheets.get_scores_by_manager(quarter, manager_name)

@@ -67,6 +67,8 @@ def submit_score():
 def _upsert_score(status: str):
     """Shared logic for save_draft and submit_score."""
     session = g.session
+    role: str = session.get("role", "")
+    is_sysadmin: bool = role == "系統管理員"
     manager_name: str = session["name"]
     line_uid: str = session["lineUid"]
     is_test: bool = session.get("isTest", False)
@@ -75,6 +77,10 @@ def _upsert_score(status: str):
     emp_name = (body.get("empName") or "").strip()
     section = (body.get("section") or "").strip()
     scores_raw: dict = body.get("scores") or {}
+    # SysAdmin simulation: actAs overrides manager identity
+    act_as = (body.get("actAs") or "").strip()
+    if is_sysadmin and act_as:
+        manager_name = act_as
     try:
         special_raw = float(body.get("special") or 0)
     except (ValueError, TypeError):
@@ -98,20 +104,38 @@ def _upsert_score(status: str):
         quarter = settings.get("當前季度") or current_quarter()
 
     if status == "已送出":
-        # Validate scoring period
-        if not is_in_scoring_period(settings):
-            return jsonify({"error": "不在評分期間內，無法送出"}), 403
+        # SysAdmin bypasses scoring period and quarter-lock checks (for testing / proxy submission)
+        if not is_sysadmin:
+            if not is_in_scoring_period(settings):
+                return jsonify({"error": "不在評分期間內，無法送出"}), 403
+            closed_raw: str = settings.get("已關帳季度", "") or ""
+            closed_quarters = {q.strip() for q in closed_raw.split(",") if q.strip()}
+            if quarter in closed_quarters:
+                return jsonify({"error": f"{quarter} 已關帳，無法送出評分"}), 403
 
         # Validate all 6 items are filled
         missing = [f"item{i}" for i in range(1, 7) if not scores_raw.get(f"item{i}")]
         if missing:
             return jsonify({"error": f"評分項目未填完：{', '.join(missing)}"}), 400
 
-    # Get weight and build record — use JWT-cached responsibilities to avoid live Sheets read
-    responsibilities = g.session.get("responsibilities", [])
+    # SysAdmin: load responsibilities from Sheets by manager name (not JWT)
+    if is_sysadmin:
+        all_resp = sheets.get_manager_responsibilities()
+        employees = sheets.get_all_employees()
+        emp = next((e for e in employees if e.get("name", "").strip() == manager_name), None)
+        manager_emp_id = emp.get("employeeId", "") if emp else ""
+        responsibilities = [
+            r for r in all_resp
+            if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+               (not manager_emp_id and r.get("name") == manager_name)
+        ]
+        manager_sections = {r["section"] for r in responsibilities}
+    else:
+        # Use JWT-cached responsibilities to avoid live Sheets read
+        responsibilities = g.session.get("responsibilities", [])
+        manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
 
     # [P0-1] Validate section is within manager's assigned responsibilities
-    manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
     if section not in manager_sections:
         return jsonify({"error": "無此科別的評分權限"}), 403
 
@@ -341,14 +365,19 @@ def get_season_status():
 
     available_quarters = get_available_quarters(int(year))
 
-    responsibilities = sheets.get_manager_responsibilities()
-    manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
+    all_resp = sheets.get_manager_responsibilities()
+    all_employees_list = sheets.get_all_employees()
+    emp_rec = next((e for e in all_employees_list if e.get("name", "").strip() == manager_name), None)
+    manager_emp_id = emp_rec.get("employeeId", "") if emp_rec else ""
+    responsibilities = [
+        r for r in all_resp
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+           (not manager_emp_id and r.get("lineUid") == line_uid)
+    ]
+    manager_sections = {r["section"] for r in responsibilities}
 
     # [P0-1] Only count employees in this manager's sections
-    section_employees = [
-        e for e in sheets.get_all_employees()
-        if e["section"] in manager_sections
-    ]
+    section_employees = [e for e in all_employees_list if e["section"] in manager_sections]
     year_scores = sheets.get_scores_by_manager_year(manager_name, year)
 
     result = []
@@ -398,14 +427,26 @@ def get_quarter_employees():
         settings = sheets.get_settings()
         quarter = settings.get("當前季度") or current_quarter()
 
-    responsibilities = sheets.get_manager_responsibilities()
-    # [P0-1] Scope employees to manager's own sections
-    manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
-
-    section_employees = [
-        e for e in sheets.get_all_employees()
-        if e["section"] in manager_sections
+    all_resp = sheets.get_manager_responsibilities()
+    all_employees = sheets.get_all_employees()
+    emp = next((e for e in all_employees if e.get("name", "").strip() == manager_name), None)
+    manager_emp_id = emp.get("employeeId", "") if emp else ""
+    # Match by employeeId first, then lineUid as fallback
+    responsibilities = [
+        r for r in all_resp
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+           (not manager_emp_id and r.get("lineUid") == line_uid)
     ]
+    # [P0-1] Scope employees to manager's own sections
+    manager_sections = {r["section"] for r in responsibilities}
+
+    section_employees = sorted(
+        (
+            e for e in all_employees
+            if e["section"] in manager_sections or e.get("jobTitle", "") in manager_sections
+        ),
+        key=lambda e: (e["dept"], e["section"], e["name"]),
+    )
     scores = sheets.get_scores_by_manager(quarter, manager_name)
     score_by_emp = {s["empName"]: s for s in scores}
 

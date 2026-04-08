@@ -39,12 +39,13 @@ _COL_ACCOUNT = {
 }
 
 # Column indices (0-based) for 主管權重 sheet
+# Sheet structure: 被評科別 | 職稱 | 姓名 | LINE_UID | 員工編號 | 權重
 _COL_WEIGHT = {
     "section": 0,
     "jobTitle": 1,
     "name": 2,
     "lineUid": 3,
-    "testUid": 4,
+    "employeeId": 4,
     "weight": 5,
 }
 
@@ -233,10 +234,16 @@ class SheetsService:
     def update_settings(self, new_settings: dict[str, str]) -> None:
         ws = self.worksheet("系統設定")
         rows = _cached_rows(ws, self.is_test, "系統設定")
+        updated_keys: set[str] = set()
         for i, row in enumerate(rows[1:], start=2):
             key = row[0] if row else ""
             if key in new_settings:
                 ws.update_cell(i, 2, new_settings[key])
+                updated_keys.add(key)
+        # Append rows for new keys not yet in the sheet
+        for key, value in new_settings.items():
+            if key not in updated_keys:
+                ws.append_row([key, value])
         _invalidate(self.is_test, "系統設定")
 
     # ── Accounts (LINE帳號) ────────────────────────────────────────────────
@@ -260,7 +267,7 @@ class SheetsService:
         """Return (account_dict, 1-based row index) or (None, -1)."""
         ws = self.worksheet("LINE帳號")
         rows = _cached_rows(ws, self.is_test, "LINE帳號")
-        uid_col = _COL_ACCOUNT["testUid"] if self.is_test else _COL_ACCOUNT["lineUid"]
+        uid_col = _COL_ACCOUNT["lineUid"]  # both test and prod use same column; test/prod separated by sheet
         for i, row in enumerate(rows[1:], start=2):  # row i is 1-based sheet row
             if len(row) > uid_col and row[uid_col] == line_uid:
                 return self._parse_account_row(row), i
@@ -269,14 +276,39 @@ class SheetsService:
     def find_account_by_identity(
         self, name: str, employee_id: str
     ) -> tuple[dict | None, int]:
-        """Match by name + employeeId for binding."""
+        """
+        Match by name + employeeId for binding.
+
+        Employee IDs are the source of truth in 員工資料 sheet (populated by
+        sync_employees_from_hr). LINE帳號 sheet tracks binding state; its
+        employeeId col may be empty. We cross-check employee_id against 員工資料
+        to validate identity, then find the matching row in LINE帳號 by name.
+        """
+        # Step 1: Validate name + employee_id against 員工資料 (source of truth)
+        employees = self.get_all_employees()
+        emp_match = next(
+            (e for e in employees if e["name"].strip() == name and e["employeeId"].strip() == employee_id),
+            None,
+        )
+        if not emp_match:
+            logger.warning(
+                "find_account_by_identity: no employee match for name=%r emp_id=%r in 員工資料",
+                name, employee_id,
+            )
+            return None, -1
+
+        # Step 2: Locate the row in LINE帳號 by name
         ws = self.worksheet("LINE帳號")
         rows = _cached_rows(ws, self.is_test, "LINE帳號")
         for i, row in enumerate(rows[1:], start=2):
             row_name = _safe(row, _COL_ACCOUNT["name"]).strip()
-            row_emp_id = _safe(row, _COL_ACCOUNT["employeeId"]).strip()
-            if row_name == name and row_emp_id == employee_id:
+            if row_name == name:
                 return self._parse_account_row(row), i
+
+        logger.warning(
+            "find_account_by_identity: employee %r found in 員工資料 but missing from LINE帳號",
+            name,
+        )
         return None, -1
 
     def get_all_accounts(self) -> list[dict]:
@@ -297,24 +329,18 @@ class SheetsService:
         """Write LINE UID (and metadata) into the given sheet row."""
         ws = self.worksheet("LINE帳號")
         now_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-        if self.is_test:
-            ws.update_cell(sheet_row, _COL_ACCOUNT["testUid"] + 1, line_uid)
-        else:
-            ws.update_cell(sheet_row, _COL_ACCOUNT["lineUid"] + 1, line_uid)
-            ws.update_cell(sheet_row, _COL_ACCOUNT["displayName"] + 1, display_name)
-            ws.update_cell(sheet_row, _COL_ACCOUNT["boundAt"] + 1, now_str)
-            ws.update_cell(sheet_row, _COL_ACCOUNT["status"] + 1, "已授權")
+        ws.update_cell(sheet_row, _COL_ACCOUNT["lineUid"] + 1, line_uid)
+        ws.update_cell(sheet_row, _COL_ACCOUNT["displayName"] + 1, display_name)
+        ws.update_cell(sheet_row, _COL_ACCOUNT["boundAt"] + 1, now_str)
+        ws.update_cell(sheet_row, _COL_ACCOUNT["status"] + 1, "已授權")
         _invalidate(self.is_test, "LINE帳號")
 
     def unbind_account(self, sheet_row: int) -> None:
         ws = self.worksheet("LINE帳號")
-        if self.is_test:
-            ws.update_cell(sheet_row, _COL_ACCOUNT["testUid"] + 1, "")
-        else:
-            ws.update_cell(sheet_row, _COL_ACCOUNT["lineUid"] + 1, "")
-            ws.update_cell(sheet_row, _COL_ACCOUNT["displayName"] + 1, "")
-            ws.update_cell(sheet_row, _COL_ACCOUNT["boundAt"] + 1, "")
-            ws.update_cell(sheet_row, _COL_ACCOUNT["status"] + 1, "")
+        ws.update_cell(sheet_row, _COL_ACCOUNT["lineUid"] + 1, "")
+        ws.update_cell(sheet_row, _COL_ACCOUNT["displayName"] + 1, "")
+        ws.update_cell(sheet_row, _COL_ACCOUNT["boundAt"] + 1, "")
+        ws.update_cell(sheet_row, _COL_ACCOUNT["status"] + 1, "")
         _invalidate(self.is_test, "LINE帳號")
 
     # ── Employees (員工資料) ───────────────────────────────────────────────
@@ -330,6 +356,7 @@ class SheetsService:
                 "section": _safe(row, 3),
                 "joinDate": _safe(row, 4),
                 "leaveDate": _safe(row, 5),
+                "jobTitle": _safe(row, 6),
             }
             for row in rows[1:]
             if _safe(row, 1)  # must have a name
@@ -346,6 +373,7 @@ class SheetsService:
             "name": 4,         # E 姓名
             "dept": 10,        # K 部門
             "section": 11,     # L 科別
+            "jobTitle": 12,    # M 職稱
             "joinDate": 29,    # AD 到職日(加保)
             "leaveDate": 31,   # AF 離職日
             "include": 37,     # AL 是否算考核
@@ -363,6 +391,7 @@ class SheetsService:
                     _safe(row, HR_COL["section"]),
                     _safe(row, HR_COL["joinDate"]),
                     _safe(row, HR_COL["leaveDate"]),
+                    _safe(row, HR_COL["jobTitle"]),
                 ])
 
         dest_ws = self.worksheet("員工資料")
@@ -382,6 +411,7 @@ class SheetsService:
                     "section": row[3],
                     "joinDate": row[4],
                     "leaveDate": row[5],
+                    "jobTitle": row[6] if len(row) > 6 else "",
                 }
                 for row in eligible
             ]
@@ -458,12 +488,12 @@ class SheetsService:
         for row in rows[1:]:
             if not _safe(row, c["section"]):
                 continue
-            uid_col = c["testUid"] if self.is_test else c["lineUid"]
             result.append({
                 "section": _safe(row, c["section"]),
                 "jobTitle": _safe(row, c["jobTitle"]),
                 "name": _safe(row, c["name"]),
-                "lineUid": _safe(row, uid_col),
+                "lineUid": _safe(row, c["lineUid"]),
+                "employeeId": _safe(row, c["employeeId"]),
                 "weight": float(_safe(row, c["weight"]) or 0),
             })
         return result
