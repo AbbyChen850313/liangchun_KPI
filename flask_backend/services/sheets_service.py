@@ -49,6 +49,13 @@ _COL_WEIGHT = {
     "weight": 5,
 }
 
+# 主管權重「被評科別」→ HR 員工資料實際值的正規化映射
+# 當 Sheet 資料與 HR 字串不一致時，在此維護對應表
+_SECTION_ALIAS: dict[str, str] = {
+    "品管科": "品管部",                 # HR 用「品管部」
+    "生產科廠長": "生產科分廠廠長",      # HR 職稱為「生產科分廠廠長」
+}
+
 # Column indices (0-based) for 年度調整 sheet
 _COL_ANNUAL_ADJ = {
     "year": 0,
@@ -486,10 +493,12 @@ class SheetsService:
         result = []
         c = _COL_WEIGHT
         for row in rows[1:]:
-            if not _safe(row, c["section"]):
+            raw_section = _safe(row, c["section"])
+            if not raw_section:
                 continue
+            normalized_section = _SECTION_ALIAS.get(raw_section, raw_section)
             result.append({
-                "section": _safe(row, c["section"]),
+                "section": normalized_section,
                 "jobTitle": _safe(row, c["jobTitle"]),
                 "name": _safe(row, c["name"]),
                 "lineUid": _safe(row, c["lineUid"]),
