@@ -14,16 +14,20 @@ import type {
   DiffAlert,
   Employee,
   EmployeeDashboard,
+  ManagerEntry,
   SysAdminDashboard,
 } from "../types";
 import { DEADLINE_WARNING_DAYS, MS_PER_DAY, SCORE_DIFF_ALERT_THRESHOLD } from "../constants/scoring";
 
 type Filter = "all" | "pending" | "draft" | "done" | "probation";
 
+const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
-  const [viewAsUid, setViewAsUid] = useState("");
+  const [viewAsName, setViewAsName] = useState("");
+  const [viewAsQuarter, setViewAsQuarter] = useState("");
 
   const { data, loading, error } = useApi<AnyDashboard>(
     () => api.get("/api/dashboard").then((r) => r.data)
@@ -32,12 +36,12 @@ export default function Dashboard() {
   const { data: viewAsData, loading: viewAsLoading, error: viewAsError } =
     useApi<DashboardData | null>(
       () =>
-        viewAsUid
+        viewAsName
           ? api
-              .get(`/api/dashboard/manager?uid=${encodeURIComponent(viewAsUid)}`)
+              .get(`/api/dashboard/manager?name=${encodeURIComponent(viewAsName)}`)
               .then((r) => r.data)
           : Promise.resolve(null),
-      [viewAsUid]
+      [viewAsName]
     );
 
   if (loading) return <div className="loading"><div className="spinner" />載入中...</div>;
@@ -107,18 +111,27 @@ export default function Dashboard() {
           right={
             <div className="sysadmin-controls">
               <select
-                value={viewAsUid}
-                onChange={(e) => setViewAsUid(e.target.value)}
+                value={viewAsName}
+                onChange={(e) => setViewAsName(e.target.value)}
               >
-                <option value="">切換人員</option>
-                {sa.accounts
-                  .filter((a) => a.status === "已授權")
-                  .map((a) => (
-                    <option key={a.lineUid} value={a.lineUid}>
-                      {a.name}
+                <option value="">切換主管視角</option>
+                {(sa.managers ?? []).map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name}
                     </option>
                   ))}
               </select>
+              {viewAsName && (
+                <select
+                  value={viewAsQuarter}
+                  onChange={(e) => setViewAsQuarter(e.target.value)}
+                >
+                  <option value="">當前季度</option>
+                  {["115Q1", "115Q2", "115Q3", "115Q4"].map((q) => (
+                    <option key={q} value={q}>{q}</option>
+                  ))}
+                </select>
+              )}
               <button className="btn-link" onClick={() => navigate("/sysadmin")}>
                 ⚙️ 管理後台
               </button>
@@ -126,13 +139,20 @@ export default function Dashboard() {
           }
         />
 
-        {viewAsUid ? (
+        {viewAsName ? (
           viewAsLoading ? (
             <div className="loading"><div className="spinner" />載入中...</div>
           ) : viewAsError ? (
             <div className="error-page">{viewAsError}</div>
           ) : viewAsData ? (
-            <ManagerView data={viewAsData} filter={filter} setFilter={setFilter} navigate={navigate} />
+            <ManagerView
+              data={viewAsData}
+              filter={filter}
+              setFilter={setFilter}
+              navigate={navigate}
+              actAs={viewAsName}
+              quarterOverride={viewAsQuarter}
+            />
           ) : null
         ) : (
           <div className="hint-center">請選擇要切換的人員</div>
@@ -150,7 +170,7 @@ export default function Dashboard() {
       {managerData.diffAlerts.length > 0 && (
         <DiffAlertBanner alerts={managerData.diffAlerts} />
       )}
-      <ManagerView data={managerData} filter={filter} setFilter={setFilter} navigate={navigate} />
+      <ManagerView data={managerData} filter={filter} setFilter={setFilter} navigate={navigate} actAs="" quarterOverride="" />
     </div>
   );
 }
@@ -229,11 +249,15 @@ function ManagerView({
   filter,
   setFilter,
   navigate,
+  actAs,
+  quarterOverride,
 }: {
   data: DashboardData;
   filter: Filter;
   setFilter: (f: Filter) => void;
   navigate: ReturnType<typeof useNavigate>;
+  actAs: string;
+  quarterOverride: string;
 }) {
   const [tab, setTab] = useState<ViewTab>("current");
   const { data: annualData } = useApi<AnnualSummaryResponse | null>(
@@ -242,11 +266,16 @@ function ManagerView({
   );
 
   const filtered = filterEmployees(data.employees, filter);
+  const effectiveQuarter = quarterOverride || data.quarter;
 
   function goToScore(emp: Employee) {
-    navigate(
-      `/score?name=${encodeURIComponent(emp.name)}&section=${encodeURIComponent(emp.section)}&quarter=${encodeURIComponent(data.quarter)}`
-    );
+    const params = new URLSearchParams({
+      name: emp.name,
+      section: emp.section,
+      quarter: effectiveQuarter,
+    });
+    if (actAs) params.set("actAs", actAs);
+    navigate(`/score?${params.toString()}`);
   }
 
   return (
@@ -269,12 +298,6 @@ function ManagerView({
           onClick={() => navigate("/season-score")}
         >
           四季評分
-        </button>
-        <button
-          className="filter-btn"
-          onClick={() => navigate("/manager-batch")}
-        >
-          批次評分
         </button>
         <button
           className="filter-btn"
@@ -314,6 +337,17 @@ function ManagerView({
             )}
           </div>
         </>
+      )}
+
+      {/* FAB: batch scoring — outside tab ternary so it shows on all tabs */}
+      {!actAs && (
+        <button
+          className="fab"
+          onClick={() => navigate("/manager-batch")}
+          title="批次評分"
+        >
+          ✏️
+        </button>
       )}
     </>
   );
