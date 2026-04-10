@@ -81,8 +81,8 @@ def _build_stubs() -> None:
     class _FakeWorksheetResponsibilities:
         def get_all_values(self):
             return [
-                ["section", "jobTitle", "name", "lineUid", "testUid", "weight"],
-                ["人事科", "主任", "張主管", "Lprod1", "Umgr1", "0.6"],
+                ["section", "jobTitle", "name", "lineUid", "employeeId", "weight"],
+                ["人事科", "主任", "張主管", "Umgr1", "", "0.6"],
             ]
 
     class _FakeWorksheetEmployees:

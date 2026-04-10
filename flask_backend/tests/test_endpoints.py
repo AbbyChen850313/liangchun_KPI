@@ -111,7 +111,7 @@ def _build_gspread_stub():
             return [
                 ["name", "lineUid", "displayName", "boundAt", "status",
                  "jobTitle", "phone", "role", "clearFlag", "testUid", "employeeId"],
-                ["測試用戶", "Lprod_test", "測試用戶", "2024-01-01", "已授權",
+                ["測試用戶", "test-uid-001", "測試用戶", "2024-01-01", "已授權",
                  "系統管理員", "", "系統管理員", "", "test-uid-001", "T001"],
             ]
 
