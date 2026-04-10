@@ -111,6 +111,12 @@ def gcp_sa_info() -> dict:
     return json.loads(raw)
 
 
+def console_sa_info() -> dict:
+    """Return parsed Service Account JSON dict for liangchun-console (紫精靈)."""
+    raw = _get_secret("CONSOLE_SA_KEY")
+    return json.loads(raw)
+
+
 def jwt_secret() -> str:
     secret = _get_secret("JWT_SECRET")
     if len(secret) < 32:

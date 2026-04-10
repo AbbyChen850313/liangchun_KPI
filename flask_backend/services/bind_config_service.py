@@ -1,8 +1,8 @@
 """
 Bind field configuration service.
 
-Reads bind field definitions from Firestore `_config/bind_fields`.
-Falls back to KPI defaults if Firestore is unavailable or not configured.
+Reads bind field definitions from 紫精靈 console Firestore `_config/bind_fields`.
+Falls back to KPI defaults if the console Firestore is unavailable or not configured.
 
 Config document schema:
   {
@@ -48,23 +48,19 @@ _KPI_DEFAULT_CONFIG: dict = {
 
 
 def get_bind_config(is_test: bool) -> dict:
-    """Return bind field config from Firestore, falling back to KPI defaults."""
+    """Return bind field config from console Firestore, falling back to KPI defaults."""
     try:
-        import firebase_admin
-        from firebase_admin import firestore as fb_store  # type: ignore[attr-defined]
-
-        if not firebase_admin._apps:
-            return _KPI_DEFAULT_CONFIG
+        from services.console_client import get_console_db
 
         prefix = "test_" if is_test else ""
-        db = fb_store.client()
+        db = get_console_db()
         doc = db.collection(f"{prefix}_config").document("bind_fields").get()
         if doc.exists:
             data = doc.to_dict() or {}
             if data.get("fields"):
                 return data
     except Exception:
-        logger.warning("bind_config: Firestore read failed, using KPI default config")
+        logger.warning("bind_config: console Firestore 讀取失敗，使用 KPI 預設設定")
 
     return _KPI_DEFAULT_CONFIG
 
