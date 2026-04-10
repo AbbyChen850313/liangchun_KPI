@@ -18,7 +18,7 @@ var HEALTH_TARGETS = {
   'KPI':     'https://kaohe-backend-843141939177.asia-east1.run.app/health',
   'Course':  'https://course-notifier-backend-1011727677078.asia-east1.run.app/health',
   'Survey':  'https://survey-backend-test-411923664862.asia-east1.run.app/health',
-  'Expense': 'https://expense-backend-843141939177.asia-east1.run.app/health',
+  // 'Expense': 尚未部署，待 Expense 系統上線後加回
 };
 
 /**
