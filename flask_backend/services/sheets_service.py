@@ -265,7 +265,7 @@ class SheetsService:
             "status": _safe(row, c["status"]),
             "jobTitle": _safe(row, c["jobTitle"]),
             "phone": _safe(row, c["phone"]),
-            "role": _safe(row, c["role"]),
+            "role": _safe(row, c["role"]) or "同仁",
             "testUid": _safe(row, c["testUid"]),
             "employeeId": _safe(row, c["employeeId"]),
         }

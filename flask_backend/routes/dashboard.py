@@ -43,7 +43,7 @@ def get_dashboard():
     """
     session = g.session
     line_uid: str = session["lineUid"]
-    role: str = session.get("role", "同仁")
+    role: str = session.get("role") or "同仁"
     is_test: bool = session.get("isTest", False)
 
     sheets = _sheets(is_test)

@@ -53,7 +53,7 @@ def _session_from_access_token(access_token: str, is_test: bool):
     if account.get("status") != "已授權":
         return jsonify({"error": "帳號尚未授權，請聯繫 HR"}), 403
 
-    role = account.get("role", "同仁")
+    role = account.get("role") or "同仁"
     responsibilities = []
     if role in ("主管", "系統管理員"):
         try:
@@ -249,7 +249,7 @@ def refresh_role():
     if not account:
         return jsonify({"error": "帳號未綁定"}), 401
 
-    role = account.get("role", "同仁")
+    role = account.get("role") or "同仁"
     responsibilities = []
     if role in ("主管", "系統管理員"):
         try:
