@@ -276,6 +276,27 @@ class TestAuth:
         assert res.status_code == 200
 
 
+class TestRoleEmptyStringFallback:
+    def test_dashboard_with_empty_role_does_not_return_500(self, client):
+        """JWT with role='' must not cause 500 — dashboard must fall back to 同仁 view.
+
+        Root cause (P0-NEW): _parse_account_row returned role: "" (empty string).
+        account.get("role", "同仁") does NOT apply the default when the key exists,
+        so JWT was issued with role: "" → all dashboard routing conditions skipped →
+        exception → global 500 handler. Fixed by using `account.get("role") or "同仁"`.
+        """
+        token = issue_session_token(
+            line_uid="test-uid-001",
+            name="測試用戶",
+            role="",  # simulate corrupted/missing role in Sheets
+            is_test=True,
+        )
+        res = client.get("/api/dashboard", headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code != 500, (
+            f"role='' caused 500 — or fallback missing. Got: {res.get_data(as_text=True)[:200]}"
+        )
+
+
 class TestRefreshRole:
     def test_refresh_role_returns_fresh_token_and_role(self, client):
         """Valid JWT → returns new token and role."""
