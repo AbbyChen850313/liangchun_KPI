@@ -22,6 +22,7 @@ export default function Score() {
   const section = decodeURIComponent(params.get("section") ?? "");
   const quarter = decodeURIComponent(params.get("quarter") ?? "");
   const isLocked = params.get("isLocked") === "true";
+  const actAs = decodeURIComponent(params.get("actAs") ?? "");
 
   const [scores, setScores] = useState<ScoreItems>({
     item1: "", item2: "", item3: "",
@@ -57,8 +58,18 @@ export default function Score() {
     [empName, historyYear]
   );
 
+  // Pre-fill existing scores — must be declared before any early return (Rules of Hooks)
+  useEffect(() => {
+    if (myScores?.[empName]) {
+      const existing = myScores[empName];
+      setScores(existing.scores);
+      setSpecial(existing.special ?? 0);
+      setNote(existing.note ?? "");
+    }
+  }, [myScores, empName]);
+
   // Guard: empName is required — without it we cannot load or submit scores.
-  // Placed after hooks to comply with Rules of Hooks.
+  // Placed after all hooks to comply with Rules of Hooks.
   if (!empName) {
     return (
       <div className="page-center">
@@ -69,16 +80,6 @@ export default function Score() {
       </div>
     );
   }
-
-  // Pre-fill existing scores
-  useEffect(() => {
-    if (myScores?.[empName]) {
-      const existing = myScores[empName];
-      setScores(existing.scores);
-      setSpecial(existing.special ?? 0);
-      setNote(existing.note ?? "");
-    }
-  }, [myScores, empName]);
 
 
   function showToast(msg: string) {
@@ -109,6 +110,7 @@ export default function Score() {
         special,
         note,
         ...(quarter && { quarter }),
+        ...(actAs && { actAs }),
       });
       showToast(submit ? "✅ 評分已送出" : "💾 草稿已儲存");
       if (submit) setTimeout(() => navigate("/"), POST_SUBMIT_REDIRECT_MS);
