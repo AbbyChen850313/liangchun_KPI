@@ -541,9 +541,16 @@ def manager_batch_submit():
         return jsonify({"error": "不在評分期間內，無法送出"}), 403
 
     responsibilities = sheets.get_manager_responsibilities()
-    manager_sections = {r["section"] for r in responsibilities if r["lineUid"] == line_uid}
-
     all_employees = sheets.get_all_employees()
+    # Use employeeId as primary key, lineUid as fallback — consistent with get_season_status/get_quarter_employees
+    emp_rec = next((e for e in all_employees if e.get("name", "").strip() == manager_name), None)
+    manager_emp_id = emp_rec.get("employeeId", "") if emp_rec else ""
+    manager_sections = {
+        r["section"] for r in responsibilities
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+           (not manager_emp_id and r.get("lineUid") == line_uid)
+    }
+
     section_employee_names = {e["name"] for e in all_employees if e["section"] in manager_sections}
 
     # Pre-fetch submitted keys for idempotency guard
