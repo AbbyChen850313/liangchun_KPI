@@ -376,8 +376,11 @@ def get_season_status():
     ]
     manager_sections = {r["section"] for r in responsibilities}
 
-    # [P0-1] Only count employees in this manager's sections
-    section_employees = [e for e in all_employees_list if e["section"] in manager_sections]
+    # [P0-1] Only count active employees in this manager's sections
+    section_employees = [
+        e for e in all_employees_list
+        if e["section"] in manager_sections and not e.get("leaveDate")
+    ]
     year_scores = sheets.get_scores_by_manager_year(manager_name, year)
 
     result = []
@@ -445,6 +448,7 @@ def get_quarter_employees():
             e for e in all_employees
             if (e["section"] in manager_sections or e.get("jobTitle", "") in manager_sections)
             and e["name"] != manager_name  # exclude self-evaluation
+            and not e.get("leaveDate")  # exclude resigned
         ),
         key=lambda e: (e["dept"], e["section"], e["name"]),
     )
