@@ -160,7 +160,12 @@ def _upsert_score(status: str):
     if score_data["weight"] == 0:
         return jsonify({"error": "找不到此科別的主管權重設定"}), 400
 
-    sheets.upsert_score(score_data)
+    try:
+        sheets.upsert_score(score_data)
+    except ValueError as exc:
+        if str(exc).startswith("duplicate_submission"):
+            return jsonify({"error": "此員工本季度已完成評分，無法重複提交"}), 409
+        raise
 
     if status == "已送出":
         logger.info(
