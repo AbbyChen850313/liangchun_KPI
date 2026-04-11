@@ -103,8 +103,15 @@ def build_score_record(
     weight = next(
         (r["weight"] for r in responsibilities
          if r["lineUid"] == line_uid and r["section"] == section),
-        0.0,
+        None,
     )
+    if weight is None:
+        # Fallback: section-only match for SysAdmin proxy submissions where
+        # line_uid is the admin's UID, not the target manager's UID.
+        weight = next(
+            (r["weight"] for r in responsibilities if r["section"] == section),
+            0.0,
+        )
     calc = calc_all(scores_raw, special, weight)
     return {
         "quarter": quarter,
