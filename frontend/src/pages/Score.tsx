@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
+import { useAutoSave } from "../hooks/useAutoSave";
 import { api } from "../services/api";
 import { refreshRole } from "../services/authRefresh";
 import type { ScoreItem, ScoreItems, ScoreRecord } from "../types";
@@ -32,6 +33,7 @@ export default function Score() {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [dirty, setDirty] = useState(false);
 
   // AC1: refresh role on every Score page mount (covers SPA navigation where useLiff does not re-run)
   useEffect(() => {
@@ -67,6 +69,26 @@ export default function Score() {
       setNote(existing.note ?? "");
     }
   }, [myScores, empName]);
+
+  // Silent draft save for auto-save (no toast, no saving-state change).
+  async function saveDraftSilently() {
+    if (saving) return;
+    await api.post("/api/scoring/draft", {
+      empName,
+      section,
+      scores,
+      special,
+      note,
+      ...(quarter && { quarter }),
+      ...(actAs && { actAs }),
+    });
+  }
+
+  const { lastSavedAt } = useAutoSave(
+    saveDraftSilently,
+    [scores, special, note],
+    !dirty || isLocked || !empName
+  );
 
   // Guard: empName is required — without it we cannot load or submit scores.
   // Placed after all hooks to comply with Rules of Hooks.
@@ -194,7 +216,7 @@ export default function Score() {
                       <button
                         key={g}
                         className={`grade-btn${scores[key] === g ? " selected" : ""}`}
-                        onClick={() => !isLocked && setScores((s) => ({ ...s, [key]: g }))}
+                        onClick={() => { if (!isLocked) { setScores((s) => ({ ...s, [key]: g })); setDirty(true); } }}
                         disabled={isLocked}
                       >
                         {g}
@@ -213,7 +235,7 @@ export default function Score() {
             type="number"
             step="1"
             value={special}
-            onChange={(e) => !isLocked && setSpecial(Number(e.target.value))}
+            onChange={(e) => { if (!isLocked) { setSpecial(Number(e.target.value)); setDirty(true); } }}
             readOnly={isLocked}
           />
         </div>
@@ -225,7 +247,7 @@ export default function Score() {
             placeholder="選填"
             maxLength={500}
             value={note}
-            onChange={(e) => !isLocked && setNote(e.target.value)}
+            onChange={(e) => { if (!isLocked) { setNote(e.target.value); setDirty(true); } }}
             readOnly={isLocked}
           />
         </div>
@@ -267,6 +289,11 @@ export default function Score() {
             >
               ✅ 送出評分
             </button>
+          </div>
+        )}
+        {lastSavedAt && (
+          <div style={{ fontSize: "0.75rem", color: "#9ca3af", textAlign: "center", marginTop: 6 }}>
+            已自動儲存 {lastSavedAt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
           </div>
         )}
       </div>

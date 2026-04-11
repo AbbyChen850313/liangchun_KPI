@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "../hooks/useApi";
+import { useAutoSave } from "../hooks/useAutoSave";
 import { api } from "../services/api";
 import type { ScoreItem, ScoreItems, SelfScoreRecord } from "../types";
 import {
@@ -24,6 +25,7 @@ export default function SelfScore() {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [dirty, setDirty] = useState(false);
 
   const { data: scoreItems } = useApi<ScoreItem[]>(
     () => api.get("/api/scoring/items").then((r) => r.data)
@@ -42,12 +44,24 @@ export default function SelfScore() {
   }, [existing]);
 
 
+  // Silent draft save for auto-save (no toast).
+  async function saveSelfDraftSilently() {
+    if (saving) return;
+    await api.post("/api/scoring/self-draft", { scores, note });
+  }
+
+  const isSubmitted = existing?.status === "已送出";
+
+  const { lastSavedAt } = useAutoSave(
+    saveSelfDraftSilently,
+    [scores, note],
+    !dirty || isSubmitted
+  );
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), TOAST_DISMISS_MS);
   }
-
-  const isSubmitted = existing?.status === "已送出";
 
   async function handleSave(submit: boolean) {
     if (saving) return; // Prevent double-submit
@@ -123,7 +137,7 @@ export default function SelfScore() {
                       <button
                         key={g}
                         className={`grade-btn${scores[key] === g ? " selected" : ""}`}
-                        onClick={() => !isSubmitted && setScores((s) => ({ ...s, [key]: g }))}
+                        onClick={() => { if (!isSubmitted) { setScores((s) => ({ ...s, [key]: g })); setDirty(true); } }}
                         disabled={isSubmitted}
                       >
                         {g}
@@ -143,7 +157,7 @@ export default function SelfScore() {
             placeholder="選填"
             maxLength={500}
             value={note}
-            onChange={(e) => !isSubmitted && setNote(e.target.value)}
+            onChange={(e) => { if (!isSubmitted) { setNote(e.target.value); setDirty(true); } }}
             readOnly={isSubmitted}
           />
         </div>
@@ -171,6 +185,11 @@ export default function SelfScore() {
             >
               ✅ 送出自評
             </button>
+          </div>
+        )}
+        {lastSavedAt && (
+          <div style={{ fontSize: "0.75rem", color: "#9ca3af", textAlign: "center", marginTop: 6 }}>
+            已自動儲存 {lastSavedAt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
           </div>
         )}
       </div>
