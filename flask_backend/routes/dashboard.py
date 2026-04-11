@@ -183,8 +183,14 @@ def _build_manager_dashboard(
 
     # Get all employees and filter by section
     all_employees = sheets.get_all_employees()
-    min_days = int(settings.get("最低評分天數") or 3)
-    probation_days = int(settings.get("試用期天數") or 90)
+    try:
+        min_days = int(settings.get("最低評分天數") or 3)
+    except (ValueError, TypeError):
+        min_days = 3
+    try:
+        probation_days = int(settings.get("試用期天數") or 90)
+    except (ValueError, TypeError):
+        probation_days = 90
 
     my_employees = sorted(
         (
