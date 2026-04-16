@@ -485,6 +485,7 @@ def get_employee_history():
     """
     session = g.session
     manager_name: str = session["name"]
+    line_uid: str = session["lineUid"]
     is_test: bool = session.get("isTest", False)
     emp_name = request.args.get("empName", "").strip()
     year = request.args.get("year", "").strip()
@@ -493,6 +494,22 @@ def get_employee_history():
         return jsonify({"error": "缺少 empName 參數"}), 400
 
     sheets = _sheets(is_test)
+
+    # [P0-SQ2] Section isolation: verify empName belongs to manager's sections
+    all_resp = sheets.get_manager_responsibilities()
+    all_employees = sheets.get_all_employees()
+    emp_rec = next((e for e in all_employees if e.get("name", "").strip() == manager_name), None)
+    manager_emp_id = emp_rec.get("employeeId", "") if emp_rec else ""
+    responsibilities = [
+        r for r in all_resp
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id) or
+           (not manager_emp_id and r.get("lineUid") == line_uid)
+    ]
+    manager_sections = {r["section"] for r in responsibilities}
+    emp_sections = {e["section"] for e in all_employees if e["name"] == emp_name}
+    if not manager_sections.intersection(emp_sections):
+        return jsonify({"error": "無權限查看此員工歷史評分"}), 403
+
     if not year:
         settings = sheets.get_settings()
         year = (settings.get("當前季度") or current_quarter())[:3]
