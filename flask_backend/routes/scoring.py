@@ -12,7 +12,7 @@ from flask import Blueprint, g, jsonify, request
 
 from extensions import limiter
 from services.audit_service import write_audit_log
-from services.auth_service import require_auth, require_hr, require_manager
+from services.auth_service import require_auth, require_hr, require_manager, can_access_employee_data
 from services.scoring_service import (
     NOTE_MAX_LENGTH,
     SCORE_DIFF_ALERT_THRESHOLD,

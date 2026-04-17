@@ -14,14 +14,11 @@ import type {
   DiffAlert,
   Employee,
   EmployeeDashboard,
-  ManagerEntry,
   SysAdminDashboard,
 } from "../types";
 import { DEADLINE_WARNING_DAYS, MS_PER_DAY, SCORE_DIFF_ALERT_THRESHOLD } from "../constants/scoring";
 
 type Filter = "all" | "pending" | "draft" | "done" | "probation";
-
-const QUARTERS = ["Q1", "Q2", "Q3", "Q4"];
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -200,10 +197,11 @@ function Header({
 function InfoBar({ data }: { data: DashboardData }) {
   const pct = (data.total ?? 0) > 0 ? Math.round((data.scored / data.total) * 100) : 0;
   const deadline = data.settings["評分截止日"];
+  const [now] = useState(() => Date.now());
   let deadlineText = "-";
   let daysLeft = Infinity;
   if (deadline) {
-    daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / MS_PER_DAY);
+    daysLeft = Math.ceil((new Date(deadline).getTime() - now) / MS_PER_DAY);
     deadlineText = `${new Date(deadline).toLocaleDateString("zh-TW")}（剩 ${daysLeft} 天）`;
   }
 

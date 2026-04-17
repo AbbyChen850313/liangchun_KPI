@@ -9,9 +9,12 @@ import { useApi } from "../hooks/useApi";
 import { api } from "../services/api";
 import type { Account } from "../types";
 
+const TEST_QUARTERS = ["115Q1", "115Q2", "115Q3", "115Q4"];
+
 export default function SysAdmin() {
   const navigate = useNavigate();
   const [toast, setToast] = useState("");
+  const [closeTarget, setCloseTarget] = useState("");
 
   const { data, loading, error, refetch } = useApi<Account[]>(
     () => api.get("/api/auth/accounts").then((r) => r.data)
@@ -20,6 +23,23 @@ export default function SysAdmin() {
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
+  }
+
+  const { data: closedData, refetch: refetchClosed } = useApi<{ closedQuarters: string[] }>(
+    () => api.get("/api/admin/closed-quarters").then((r) => r.data)
+  );
+
+  async function handleCloseQuarter() {
+    if (!closeTarget) return;
+    if (!window.confirm(`確認關帳 ${closeTarget}？關帳後該季度無法繼續評分。`)) return;
+    try {
+      await api.post("/api/admin/close-quarter", { quarter: closeTarget });
+      showToast(`✅ ${closeTarget} 已關帳`);
+      refetchClosed();
+      setCloseTarget("");
+    } catch (err: any) {
+      showToast(`❌ ${err.message}`);
+    }
   }
 
   async function handleReset(account: Account) {
@@ -46,6 +66,35 @@ export default function SysAdmin() {
         <div>
           <h1>📋 考核評分系統</h1>
           <div className="subtitle">← 系統管理員</div>
+        </div>
+      </div>
+
+      <div className="admin-section">
+        <h3>季度關帳</h3>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={closeTarget}
+            onChange={(e) => setCloseTarget(e.target.value)}
+            style={{ padding: "6px 10px", fontSize: 14 }}
+          >
+            <option value="">選擇要關帳的季度</option>
+            {TEST_QUARTERS.map((q) => (
+              <option key={q} value={q}>{q}</option>
+            ))}
+          </select>
+          <button
+            className="btn-primary"
+            onClick={handleCloseQuarter}
+            disabled={!closeTarget}
+            style={{ width: "auto", padding: "6px 16px" }}
+          >
+            關帳
+          </button>
+          {closedData && closedData.closedQuarters.length > 0 && (
+            <span style={{ fontSize: 13, color: "#666" }}>
+              已關帳：{closedData.closedQuarters.join(", ")}
+            </span>
+          )}
         </div>
       </div>
 

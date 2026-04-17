@@ -251,7 +251,6 @@ export function useLiff(): LiffState {
 
     initialise();
   // Empty deps: run exactly once on mount. initStartedRef provides the real guard.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return state;

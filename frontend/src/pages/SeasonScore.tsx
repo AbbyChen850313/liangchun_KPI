@@ -3,7 +3,7 @@
  * State machine: idle → loading → loaded → error
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import QuarterSelector from "../components/QuarterSelector";
 import { useApi } from "../hooks/useApi";
@@ -24,13 +24,10 @@ export default function SeasonScore() {
     error: seasonError,
   } = useApi<SeasonScoreStatus>(() => apiGetSeasonStatus());
 
-  // Default to the first available quarter once season status is loaded
-  useEffect(() => {
-    if (seasonStatus && !selectedQuarter) {
-      const firstAvailable = seasonStatus.quarters.find((q) => q.isAvailable);
-      if (firstAvailable) setSelectedQuarter(firstAvailable.quarter);
-    }
-  }, [seasonStatus, selectedQuarter]);
+  const effectiveQuarter =
+    selectedQuarter ||
+    seasonStatus?.quarters.find((q) => q.isAvailable)?.quarter ||
+    "";
 
   const {
     data: quarterData,
@@ -38,24 +35,24 @@ export default function SeasonScore() {
     error: employeesError,
   } = useApi<QuarterEmployeesResponse | null>(
     () =>
-      selectedQuarter
-        ? apiGetQuarterEmployees(selectedQuarter)
+      effectiveQuarter
+        ? apiGetQuarterEmployees(effectiveQuarter)
         : Promise.resolve(null),
-    [selectedQuarter]
+    [effectiveQuarter]
   );
 
   function goToScore(empName: string, section: string, isLocked: boolean) {
     const params = new URLSearchParams({
       name: empName,
       section,
-      quarter: selectedQuarter,
+      quarter: effectiveQuarter,
       ...(isLocked && { isLocked: "true" }),
     });
     navigate(`/score?${params.toString()}`);
   }
 
   function selectedQuarterOption(): QuarterOption | undefined {
-    return seasonStatus?.quarters.find((q) => q.quarter === selectedQuarter);
+    return seasonStatus?.quarters.find((q) => q.quarter === effectiveQuarter);
   }
 
   return (
@@ -82,7 +79,7 @@ export default function SeasonScore() {
         <>
           <QuarterSelector
             quarters={seasonStatus.quarters}
-            selected={selectedQuarter}
+            selected={effectiveQuarter}
             onChange={setSelectedQuarter}
           />
 

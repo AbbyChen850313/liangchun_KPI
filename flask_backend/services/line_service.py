@@ -17,6 +17,9 @@ _LINE_PROFILE_URL = "https://api.line.me/v2/profile"
 _LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 _LINE_TOKEN_URL = "https://api.line.me/oauth2/v2.1/token"
 
+# Timeout constants (seconds)
+_LINE_API_TIMEOUT = 10
+
 
 def verify_access_token(access_token: str, is_test: bool = False) -> dict | None:
     """
@@ -31,7 +34,7 @@ def verify_access_token(access_token: str, is_test: bool = False) -> dict | None
     verify_resp = requests.get(
         _LINE_VERIFY_URL,
         params={"access_token": access_token},
-        timeout=10,
+        timeout=_LINE_API_TIMEOUT,
     )
     if verify_resp.status_code != 200:
         logger.warning("LINE token verification failed: %s", verify_resp.text)
@@ -52,7 +55,7 @@ def verify_access_token(access_token: str, is_test: bool = False) -> dict | None
     profile_resp = requests.get(
         _LINE_PROFILE_URL,
         headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
+        timeout=_LINE_API_TIMEOUT,
     )
     if profile_resp.status_code != 200:
         logger.warning("LINE profile fetch failed: %s", profile_resp.text)
@@ -79,7 +82,7 @@ def exchange_auth_code(code: str, redirect_uri: str, is_test: bool = False) -> s
             "client_secret": config.line_login_channel_secret(is_test),
         },
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=10,
+        timeout=_LINE_API_TIMEOUT,
     )
     if resp.status_code != 200:
         logger.warning("LINE code exchange failed: %s", resp.text)
@@ -100,7 +103,7 @@ def push_message(line_uid: str, text: str, is_test: bool = False) -> bool:
             "to": line_uid,
             "messages": [{"type": "text", "text": text}],
         },
-        timeout=10,
+        timeout=_LINE_API_TIMEOUT,
     )
     if resp.status_code != 200:
         logger.error("LINE push failed (uid=%s): %s", line_uid, resp.text)

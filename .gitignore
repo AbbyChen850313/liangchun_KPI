@@ -20,3 +20,8 @@ venv/
 考核系統/gas/UserskkAppDataLocalGoogleChromeUser Data/
 考核系統/gas/*.bak
 考核系統/gas/*.png
+
+# 補充：mempalace 排除 venv
+test_env/
+ENV/
+env/

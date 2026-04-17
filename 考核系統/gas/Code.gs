@@ -209,7 +209,8 @@ function apiForceResetNotifySecret(currentSecret) {
 }
 
 /**
- * 直接推播 LINE 訊息給 OWNER_LINE_UID_TEST（bridge 通知用）
+ * 直接推播 LINE 訊息給 OWNER（bridge 通知用）
+ * 優先使用 OWNER_LINE_UID（正式 bot），若未設定則退回 OWNER_LINE_UID_TEST
  * 用法：POST { action: 'apiNotifyOwner', args: ['SECRET', '訊息'] }
  */
 function apiNotifyOwner(secret, message) {
@@ -217,12 +218,22 @@ function apiNotifyOwner(secret, message) {
   const stored = props.getProperty('NOTIFY_SECRET');
   if (!stored || secret !== stored) return { error: '認證失敗' };
 
-  const ownerUid = props.getProperty('OWNER_LINE_UID_TEST');
-  if (!ownerUid) return { error: 'OWNER_LINE_UID_TEST 未設定，請先傳送 ping 給 ABBY_Test bot' };
+  const prodUid = props.getProperty('OWNER_LINE_UID');
+  const testUid = props.getProperty('OWNER_LINE_UID_TEST');
 
-  _setRequestIsTest(true);
-  const ok = sendReminder(ownerUid, message);
-  return { success: ok };
+  if (prodUid) {
+    // 正式 bot 推播（不呼叫 _setRequestIsTest，使用正式 channel）
+    _setRequestIsTest(false);
+    const ok = sendReminder(prodUid, message);
+    return { success: ok, channel: 'prod' };
+  } else if (testUid) {
+    // 退回測試 bot（暫時用，請設定 OWNER_LINE_UID 切換正式）
+    _setRequestIsTest(true);
+    const ok = sendReminder(testUid, message);
+    return { success: ok, channel: 'test_fallback' };
+  } else {
+    return { error: 'OWNER_LINE_UID 及 OWNER_LINE_UID_TEST 皆未設定。請傳送 ping 給正式 bot，或先傳給 ABBY_Test bot。' };
+  }
 }
 
 /**

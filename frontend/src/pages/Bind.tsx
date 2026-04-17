@@ -12,7 +12,7 @@ import { api } from "../services/api";
 
 const IS_TEST = import.meta.env.VITE_IS_TEST === "true";
 
-type Step = "code" | "identity" | "success";
+type Step = "choice" | "code" | "identity" | "success";
 
 interface BindField {
   key: string;
@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: BindConfig = {
 };
 
 export default function Bind() {
-  const [step, setStep] = useState<Step>("code");
+  const [step, setStep] = useState<Step>("choice");
   const [bindConfig, setBindConfig] = useState<BindConfig>(DEFAULT_CONFIG);
   const [bindCode, setBindCode] = useState("");
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
@@ -45,30 +45,13 @@ export default function Bind() {
   const [error, setError] = useState("");
   const [successName, setSuccessName] = useState("");
 
-  // Fetch bind field config on mount; also check whether to skip verify-code step.
+  // Fetch bind field config on mount (identity fields only; routing is now explicit).
   useEffect(() => {
     api
       .get<BindConfig>("/api/auth/bind-fields", { params: { isTest: IS_TEST } })
-      .then(({ data }) => {
-        setBindConfig(data);
-        if (!data.useVerifyCode) setStep("identity");
-      })
+      .then(({ data }) => setBindConfig(data))
       .catch((e: any) => {
         console.warn("[Bind] fetch bind-fields failed, using defaults:", e?.message);
-      });
-
-    const storedToken = sessionStorage.getItem("line_bind_token");
-    if (!storedToken) return;
-
-    api
-      .get("/api/auth/bind-check", {
-        params: { bindToken: storedToken, isTest: IS_TEST },
-      })
-      .then(({ data }) => {
-        if (data.inEmployeeList) setStep("identity");
-      })
-      .catch((e: any) => {
-        console.warn("[Bind] bind-check failed:", e?.message);
       });
   }, []);
 
@@ -138,9 +121,12 @@ export default function Bind() {
     }
   }
 
-  function goDashboard() {
-    window.location.href = "/";
-  }
+  // Auto-redirect after 1.5s so user sees the success message briefly
+  useEffect(() => {
+    if (step !== "success") return;
+    const t = setTimeout(() => { window.location.href = "/"; }, 1500);
+    return () => clearTimeout(t);
+  }, [step]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -150,10 +136,7 @@ export default function Bind() {
         <div className="card">
           <div className="success-icon">✅</div>
           <h2>綁定成功！</h2>
-          <p>歡迎，{successName}，您的帳號已成功綁定。</p>
-          <button className="btn-primary" onClick={goDashboard}>
-            進入考核評分系統
-          </button>
+          <p>歡迎，{successName}，正在進入系統…</p>
         </div>
       </div>
     );
@@ -200,12 +183,43 @@ export default function Bind() {
     );
   }
 
-  // step === "code"
+  if (step === "choice") {
+    return (
+      <div className="page-center">
+        <div className="card">
+          <h2>📋 考核評分系統</h2>
+          <p className="hint">請選擇您的身份</p>
+
+          <button
+            className="btn-primary"
+            style={{ marginBottom: "12px" }}
+            onClick={() => setStep("identity")}
+          >
+            我是現有員工
+          </button>
+
+          <button
+            className="btn-secondary"
+            onClick={() => setStep("code")}
+          >
+            我是新入職
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // step === "code" (新入職路徑)
   return (
     <div className="page-center">
       <div className="card">
-        <h2>📋 考核評分系統</h2>
+        <h2>新入職驗證</h2>
         <p className="hint">請輸入 HR 提供的系統驗證碼</p>
+        <p className="hint" style={{ fontSize: "12px", color: "#888" }}>
+          <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => setStep("choice")}>
+            ← 返回
+          </span>
+        </p>
 
         <label>驗證碼</label>
         <input

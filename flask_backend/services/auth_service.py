@@ -140,3 +140,38 @@ def require_sysadmin(f: Callable) -> Callable:
             return jsonify({"error": "無系統管理員權限"}), 403
         return f(*args, **kwargs)
     return decorated
+
+
+def can_access_employee_data(session: dict, emp_name: str, sheets) -> bool:
+    """Return True if the session user may read data about emp_name.
+
+    HR / 系統管理員: unrestricted access.
+    主管: restricted to employees in their responsible sections.
+    All other roles: denied.
+    """
+    role = session.get("role", "")
+    if role in ("HR", "系統管理員"):
+        return True
+    if role != "主管":
+        return False
+
+    manager_name: str = session["name"]
+    line_uid: str = session["lineUid"]
+
+    all_resp = sheets.get_manager_responsibilities()
+    all_employees = sheets.get_all_employees()
+
+    emp_rec = next(
+        (e for e in all_employees if e.get("name", "").strip() == manager_name), None
+    )
+    manager_emp_id = emp_rec.get("employeeId", "") if emp_rec else ""
+
+    responsibilities = [
+        r for r in all_resp
+        if (manager_emp_id and r.get("employeeId") == manager_emp_id)
+        or (not manager_emp_id and r.get("lineUid") == line_uid)
+    ]
+    manager_sections = {r["section"] for r in responsibilities}
+    emp_sections = {e["section"] for e in all_employees if e["name"] == emp_name}
+
+    return bool(manager_sections.intersection(emp_sections))

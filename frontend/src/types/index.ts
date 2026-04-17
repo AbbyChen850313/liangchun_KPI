@@ -113,10 +113,17 @@ export interface DashboardData {
   settings: Record<string, string>;
 }
 
+export interface ManagerEntry {
+  name: string;
+  lineUid: string;
+  testUid: string;
+}
+
 export interface SysAdminDashboard {
   isSysAdmin: true;
   managerName: string;
   accounts: Account[];
+  managers: ManagerEntry[];
   settings: Record<string, string>;
 }
 

@@ -35,6 +35,9 @@ from services.sheets_service import SheetsService
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint("admin", __name__)
 
+# Timeout constants (seconds)
+_GAS_API_TIMEOUT = 60  # GAS Web App 呼叫允許較長回應時間
+
 # [P1] Whitelist of editable settings keys — unknown keys are rejected
 _ALLOWED_SETTINGS_KEYS = frozenset({
     "當前季度", "評分開始日", "評分截止日", "綁定驗證碼",
@@ -640,7 +643,7 @@ def trigger_reminder():
         "args": [g.session["lineUid"], is_test],
     }
     try:
-        resp = _http.post(gas_url, json=gas_payload, timeout=60)
+        resp = _http.post(gas_url, json=gas_payload, timeout=_GAS_API_TIMEOUT)
         result = resp.json()
     except Exception as exc:
         logger.error("GAS trigger-reminder failed: %s", exc)
@@ -690,7 +693,7 @@ def trigger_employee_reminder():
         "args": [g.session["lineUid"], is_test],
     }
     try:
-        resp = _http.post(gas_url, json=gas_payload, timeout=60)
+        resp = _http.post(gas_url, json=gas_payload, timeout=_GAS_API_TIMEOUT)
         result = resp.json()
     except Exception as exc:
         logger.error("GAS trigger-employee-reminder failed: %s", exc)

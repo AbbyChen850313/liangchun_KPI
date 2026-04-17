@@ -28,7 +28,7 @@ def _get_secret(name: str) -> str:
     try:
         from google.cloud import secretmanager  # type: ignore
 
-        project = os.environ.get("GCP_PROJECT", "linchun-hr")
+        project = os.environ.get("GCP_PROJECT", "liangchun-kpi")
         client = secretmanager.SecretManagerServiceClient()
         resource = f"projects/{project}/secrets/{name}/versions/latest"
         response = client.access_secret_version(request={"name": resource})
@@ -44,7 +44,7 @@ def _get_secret(name: str) -> str:
 
 # ── Static config (non-sensitive) ──────────────────────────────────────────
 
-GCP_PROJECT: str = os.environ.get("GCP_PROJECT", "linchun-hr")
+GCP_PROJECT: str = os.environ.get("GCP_PROJECT", "liangchun-kpi")
 
 SPREADSHEET_ID: str = os.environ.get(
     "SPREADSHEET_ID", "1VKHfnnrv-xfdqj-36I6grY8K-YcuCd8WMIcNAvRA_eg"
@@ -63,10 +63,13 @@ LINE_LOGIN_CHANNEL_ID_TEST: str = LIFF_ID_TEST.split("-")[0]
 
 # Allowed CORS origins — localhost only permitted outside production (Cloud Run)
 _PRODUCTION_ORIGINS: list[str] = [
+    "https://liangchun-kpi.web.app",
+    "https://liangchun-kpi.firebaseapp.com",
+    "https://linchun-kpi-test.web.app",
+    "https://linchun-kpi-test.firebaseapp.com",
+    # legacy origins (kept during migration)
     "https://linchun-hr.web.app",
     "https://linchun-hr.firebaseapp.com",
-    "https://linchun-hr-test.web.app",
-    "https://linchun-hr-test.firebaseapp.com",
 ]
 _DEVELOPMENT_ORIGINS: list[str] = [
     "http://localhost:5173",
@@ -78,10 +81,13 @@ ALLOWED_ORIGINS: list[str] = (
 
 # Permitted LINE Login OAuth redirect_uri values — requests with other values are rejected (P0)
 ALLOWED_REDIRECT_URIS: list[str] = [
+    "https://liangchun-kpi.web.app/line-auth-callback",
+    "https://liangchun-kpi.firebaseapp.com/line-auth-callback",
+    "https://linchun-kpi-test.web.app/line-auth-callback",
+    "https://linchun-kpi-test.firebaseapp.com/line-auth-callback",
+    # legacy (kept during migration)
     "https://linchun-hr.web.app/line-auth-callback",
     "https://linchun-hr.firebaseapp.com/line-auth-callback",
-    "https://linchun-hr-test.web.app/line-auth-callback",
-    "https://linchun-hr-test.firebaseapp.com/line-auth-callback",
     "http://localhost:5173/line-auth-callback",
     "http://localhost:3000/line-auth-callback",
 ]
